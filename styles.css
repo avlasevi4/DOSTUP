@@ -24,6 +24,7 @@
   --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
 
   --radius: 3px;
+  --ease: cubic-bezier(.4,0,.2,1);
 }
 
 *{ box-sizing:border-box; }
@@ -41,6 +42,9 @@ h1,h2,h3{ font-family:var(--font-display); font-weight:600; margin:0; color:var(
 button{ font-family:var(--font-body); cursor:pointer; }
 input,select,textarea{ font-family:var(--font-body); }
 
+/* Роли: элементы с data-admin-only видны только при роли администратора */
+body:not(.role-admin) [data-admin-only]{ display:none !important; }
+
 /* ==========================================================================
    ЭКРАН ДОСТУПА
    ========================================================================== */
@@ -50,7 +54,7 @@ input,select,textarea{ font-family:var(--font-body); }
 }
 .gate-card{
   background:var(--paper-lift); padding:48px 40px; border-radius:var(--radius);
-  width:320px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.4);
+  width:320px; max-width:90vw; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.4);
 }
 .gate-seal{
   width:56px; height:56px; border:2px solid var(--stamp-blue); border-radius:50%;
@@ -62,11 +66,12 @@ input,select,textarea{ font-family:var(--font-body); }
 .gate-sub{ color:var(--ink-soft); font-size:13px; margin:0 0 24px; }
 #gate-input{
   width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:var(--radius);
-  font-size:15px; margin-bottom:12px; background:#fff;
+  font-size:16px; margin-bottom:12px; background:#fff;
 }
 #gate-submit{
   width:100%; padding:12px; background:var(--stamp-blue); color:#fff; border:none;
   border-radius:var(--radius); font-size:14px; font-weight:600; letter-spacing:.3px;
+  transition:background .15s var(--ease);
 }
 #gate-submit:hover{ background:var(--stamp-blue-dark); }
 .gate-error{ color:var(--stamp-red); font-size:13px; margin-top:10px; }
@@ -96,19 +101,24 @@ input,select,textarea{ font-family:var(--font-body); }
 .masthead-text h1{ color:#fff; font-size:30px; }
 .masthead-sub{ font-family:var(--font-mono); font-size:12.5px; color:#8FA3BD; margin:8px 0 0; }
 
-.masthead-actions{ display:flex; gap:10px; flex:none; }
+.masthead-actions{ display:flex; gap:10px; flex:none; flex-wrap:wrap; justify-content:flex-end; }
 .btn-ghost{
   background:transparent; border:1px solid #3F5474; color:#DCE5F0; padding:9px 16px;
-  border-radius:var(--radius); font-size:13px; transition:.15s;
+  border-radius:var(--radius); font-size:13px; transition:background .15s var(--ease), transform .1s var(--ease);
 }
 .btn-ghost:hover{ background:#2C3D53; }
+.btn-ghost:active{ transform:scale(.97); }
 .btn-primary{
   background:var(--stamp-blue); border:1px solid var(--stamp-blue); color:#fff; padding:9px 16px;
-  border-radius:var(--radius); font-size:13px; font-weight:600;
+  border-radius:var(--radius); font-size:13px; font-weight:600; transition:background .15s var(--ease), transform .1s var(--ease);
 }
 .btn-primary:hover{ background:var(--stamp-blue-dark); }
-.btn-danger{ background:transparent; border:1px solid var(--stamp-red); color:var(--stamp-red); padding:9px 16px; border-radius:var(--radius); font-size:13px; }
+.btn-primary:active{ transform:scale(.97); }
+.btn-danger{ background:transparent; border:1px solid var(--stamp-red); color:var(--stamp-red); padding:9px 16px; border-radius:var(--radius); font-size:13px; transition:background .15s var(--ease); }
 .btn-danger:hover{ background:var(--red-bg); }
+
+/* Внутри шапки (тёмный фон) элементы, скрытые для сотрудника, не должны
+   оставлять дыру в раскладке — flex-wrap уже позволяет остальным перетечь. */
 
 /* ==========================================================================
    ВКЛАДКИ
@@ -116,17 +126,20 @@ input,select,textarea{ font-family:var(--font-body); }
 .tabs{
   display:flex; gap:2px; max-width:1100px; margin:0 auto; padding:0 28px;
   border-bottom:1px solid var(--line);
+  overflow-x:auto; -webkit-overflow-scrolling:touch;
 }
 .tab{
   background:none; border:none; padding:14px 18px; font-size:13.5px; font-weight:500;
   color:var(--ink-soft); border-bottom:2px solid transparent; margin-bottom:-1px;
+  white-space:nowrap; transition:color .15s var(--ease), border-color .15s var(--ease);
 }
 .tab.active{ color:var(--stamp-blue); border-bottom-color:var(--stamp-blue); }
 .tab:hover:not(.active){ color:var(--ink); }
 
 .content{ max-width:1100px; margin:0 auto; padding:28px; }
 .tab-panel{ display:none; }
-.tab-panel.active{ display:block; }
+.tab-panel.active{ display:block; opacity:0; transform:translateY(6px); }
+.tab-panel.active.panel-enter{ opacity:1; transform:none; transition:opacity .22s var(--ease), transform .22s var(--ease); }
 
 /* ==========================================================================
    СВОДНАЯ ПОЛОСА
@@ -137,8 +150,12 @@ input,select,textarea{ font-family:var(--font-body); }
 .summary-chip{
   background:var(--paper-lift); border:1px solid var(--line); border-radius:var(--radius);
   padding:8px 14px; font-size:13px; display:flex; align-items:center; gap:7px;
+  transition:border-color .15s var(--ease), transform .1s var(--ease);
 }
 .summary-chip b{ font-family:var(--font-mono); }
+.chip-link{ cursor:pointer; }
+.chip-link:hover{ border-color:var(--stamp-blue); transform:translateY(-1px); }
+.chip-link:active{ transform:translateY(0); }
 
 /* ==========================================================================
    ГРУППЫ / ТАБЛИЦЫ РЕЕСТРА
@@ -154,15 +171,16 @@ input,select,textarea{ font-family:var(--font-body); }
 .case-row{
   display:grid; grid-template-columns:36px 1fr auto auto 32px;
   gap:16px; align-items:center; padding:13px 4px; border-bottom:1px solid var(--line);
-  cursor:pointer; transition:background .1s;
+  cursor:pointer; transition:background .12s var(--ease);
 }
 .case-row:hover{ background:var(--paper-lift); }
+.case-row:hover .case-edit-icon{ color:var(--stamp-blue); }
 .case-num{ font-family:var(--font-mono); font-size:13px; color:var(--ink-soft); }
 .case-name{ font-weight:500; }
 .case-account{ font-family:var(--font-mono); font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
 .case-status{ font-size:13.5px; max-width:420px; }
 .case-fee{ font-size:12px; white-space:nowrap; }
-.case-edit-icon{ color:var(--ink-soft); font-size:16px; text-align:center; }
+.case-edit-icon{ color:var(--ink-soft); font-size:16px; text-align:center; transition:color .12s var(--ease); }
 
 .badge{
   display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px;
@@ -177,18 +195,34 @@ input,select,textarea{ font-family:var(--font-body); }
 /* ==========================================================================
    СУДЕБНОЕ ПРОИЗВОДСТВО
    ========================================================================== */
-.panel-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.panel-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; gap:12px; flex-wrap:wrap; }
 .court-card{
   background:var(--paper-lift); border:1px solid var(--line); border-radius:var(--radius);
-  padding:18px 20px; margin-bottom:14px; cursor:pointer; transition:.1s;
+  padding:18px 20px; margin-bottom:14px; cursor:pointer; transition:border-color .12s var(--ease), transform .1s var(--ease);
   display:grid; grid-template-columns:20px 1fr auto; gap:16px; align-items:start;
 }
-.court-card:hover{ border-color:var(--stamp-blue); }
+.court-card:hover{ border-color:var(--stamp-blue); transform:translateY(-1px); }
 .court-dot{ font-size:16px; line-height:1; padding-top:2px; }
 .court-name{ font-weight:600; font-size:15px; }
 .court-meta{ font-family:var(--font-mono); font-size:12px; color:var(--ink-soft); margin-top:4px; }
 .court-hearing{ text-align:right; font-size:13px; }
 .court-hearing b{ font-family:var(--font-mono); color:var(--stamp-blue); }
+
+.hearing-item{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius);
+  background:#fff; margin-bottom:6px; font-size:13.5px;
+}
+.hearing-remove{
+  background:none; border:none; color:var(--ink-soft); font-size:14px; padding:2px 6px;
+  transition:color .12s var(--ease);
+}
+.hearing-remove:hover{ color:var(--stamp-red); }
+.hearing-add-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.hearing-add-row input{
+  padding:9px 10px; border:1px solid var(--line); border-radius:var(--radius); font-size:13.5px;
+  background:#fff; flex:1; min-width:140px;
+}
 
 /* ==========================================================================
    ЖУРНАЛ
@@ -210,16 +244,25 @@ input,select,textarea{ font-family:var(--font-body); }
 .modal-backdrop{
   position:fixed; inset:0; background:rgba(30,42,58,.55); z-index:200;
   display:flex; align-items:center; justify-content:center; padding:20px;
+  opacity:0; visibility:hidden; pointer-events:none;
+  transition:opacity .18s var(--ease), visibility 0s linear .18s;
+}
+.modal-backdrop.open{
+  opacity:1; visibility:visible; pointer-events:auto;
+  transition:opacity .18s var(--ease), visibility 0s linear 0s;
 }
 .modal{
   background:var(--paper-lift); border-radius:var(--radius); width:100%; max-width:560px;
   max-height:88vh; display:flex; flex-direction:column; box-shadow:0 24px 70px rgba(0,0,0,.35);
+  transform:scale(.96) translateY(6px); transition:transform .18s var(--ease);
 }
+.modal-backdrop.open .modal{ transform:scale(1) translateY(0); }
 .modal-head{ display:flex; justify-content:space-between; align-items:center; padding:20px 22px; border-bottom:1px solid var(--line); }
-.modal-close{ background:none; border:none; font-size:22px; color:var(--ink-soft); line-height:1; }
+.modal-close{ background:none; border:none; font-size:22px; color:var(--ink-soft); line-height:1; transition:color .12s var(--ease); }
+.modal-close:hover{ color:var(--stamp-red); }
 .modal-body{ padding:20px 22px; overflow-y:auto; }
 .modal-foot{ padding:16px 22px; border-top:1px solid var(--line); display:flex; justify-content:space-between; }
-.modal-foot-right{ display:flex; gap:10px; }
+.modal-foot-right{ display:flex; gap:10px; flex-wrap:wrap; }
 
 .field{ margin-bottom:16px; }
 .field label{ display:block; font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:6px; text-transform:uppercase; letter-spacing:.4px; }
@@ -229,6 +272,10 @@ input,select,textarea{ font-family:var(--font-body); }
 }
 .field textarea{ min-height:70px; resize:vertical; font-family:var(--font-body); }
 .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.readonly-text{
+  padding:10px 12px; border:1px solid transparent; border-radius:var(--radius);
+  font-size:14px; background:#EAE7DC; color:var(--ink-soft);
+}
 
 /* ==========================================================================
    ПОДВАЛ
@@ -242,15 +289,48 @@ input,select,textarea{ font-family:var(--font-body); }
    АДАПТИВНОСТЬ
    ========================================================================== */
 @media (max-width: 720px){
-  .masthead-inner{ flex-wrap:wrap; }
-  .stamp{ width:84px; height:84px; }
-  .stamp-core{ width:56px; height:56px; }
-  .stamp-num{ font-size:20px; }
-  .masthead-actions{ width:100%; }
-  .case-row{ grid-template-columns:24px 1fr; grid-template-areas:"num name" ". status" ". fee"; }
-  .case-fee, .case-status{ grid-column:2; }
-  .case-edit-icon{ display:none; }
+  .masthead-inner{ flex-wrap:wrap; padding:24px 18px; gap:16px; }
+  .stamp{ width:72px; height:72px; }
+  .stamp-core{ width:50px; height:50px; }
+  .stamp-num{ font-size:18px; }
+  .stamp-label{ font-size:7.5px; }
+  .masthead-text h1{ font-size:22px; }
+  .masthead-actions{ width:100%; justify-content:flex-start; }
+  .masthead-actions .btn-ghost{ padding:8px 12px; font-size:12px; }
+
+  .tabs{ padding:0 14px; }
+  .tab{ padding:12px 12px; font-size:12.5px; }
+  .content{ padding:16px; }
+
+  .summary-strip{ gap:8px; margin-bottom:20px; }
+  .summary-chip{ font-size:12px; padding:7px 11px; }
+
+  .group-head h2{ font-size:15px; }
+
+  .case-row{
+    grid-template-columns:24px 1fr 22px;
+    grid-template-areas:
+      "num name edit"
+      ".   status status"
+      ".   fee fee";
+    row-gap:6px; padding:14px 6px;
+  }
+  .case-num{ grid-area:num; }
+  .case-name{ grid-area:name; }
+  .case-account{ display:block; }
+  .case-status{ grid-area:status; max-width:none; }
+  .case-fee{ grid-area:fee; }
+  .case-edit-icon{ grid-area:edit; }
+
+  .court-card{ grid-template-columns:18px 1fr; }
+  .court-hearing{ grid-column:1 / -1; text-align:left; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line); }
+
   .field-row{ grid-template-columns:1fr; }
+  .modal{ max-width:100%; }
+  .modal-body{ padding:16px; }
+  .modal-foot{ flex-direction:column-reverse; gap:10px; align-items:stretch; }
+  .modal-foot-right{ justify-content:stretch; }
+  .modal-foot-right button{ flex:1; }
 }
 
 @media (prefers-reduced-motion: reduce){

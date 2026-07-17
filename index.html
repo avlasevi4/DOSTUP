@@ -46,7 +46,9 @@
         <p class="masthead-sub" id="last-updated">обновлено —</p>
       </div>
       <div class="masthead-actions">
+        <button id="add-case-btn" class="btn-ghost">+ Должник</button>
         <button id="add-note-btn" class="btn-ghost">+ Заметка</button>
+        <button id="import-btn" class="btn-ghost" data-admin-only>Импорт</button>
         <button id="export-btn" class="btn-ghost">Экспорт .md</button>
       </div>
     </div>
@@ -55,7 +57,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="dashboard">Реестр дел</button>
     <button class="tab" data-tab="court">Судебное производство</button>
-    <button class="tab" data-tab="log">Журнал изменений</button>
+    <button class="tab" data-tab="log" data-admin-only>Журнал изменений</button>
   </nav>
 
   <main class="content">
@@ -72,11 +74,12 @@
         <h2>Судебное производство</h2>
         <button id="add-court-btn" class="btn-primary">+ Дело в производстве</button>
       </div>
+      <div class="summary-strip" id="court-summary-strip"></div>
       <div id="court-list"></div>
     </section>
 
-    <!-- ---------- ВКЛАДКА: ЖУРНАЛ ---------- -->
-    <section id="tab-log" class="tab-panel">
+    <!-- ---------- ВКЛАДКА: ЖУРНАЛ (только администратор) ---------- -->
+    <section id="tab-log" class="tab-panel" data-admin-only>
       <div class="panel-head">
         <h2>Журнал изменений</h2>
       </div>
@@ -92,8 +95,8 @@
   </footer>
 </div>
 
-<!-- ===== МОДАЛЬНОЕ ОКНО: РЕДАКТИРОВАНИЕ ДЕЛА ===== -->
-<div id="modal-backdrop" class="modal-backdrop" hidden>
+<!-- ===== МОДАЛЬНОЕ ОКНО: РЕДАКТИРОВАНИЕ ДЕЛА / СУДОПРОИЗВОДСТВА ===== -->
+<div id="modal-backdrop" class="modal-backdrop">
   <div class="modal">
     <div class="modal-head">
       <h3 id="modal-title">Карточка дела</h3>
@@ -105,6 +108,31 @@
       <div class="modal-foot-right">
         <button id="modal-cancel" class="btn-ghost">Отмена</button>
         <button id="modal-save" class="btn-primary">Сохранить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== МОДАЛЬНОЕ ОКНО: ИМПОРТ (только администратор) ===== -->
+<div id="import-backdrop" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Импорт из чата «Учёт статусов»</h3>
+      <button id="import-close" class="modal-close" aria-label="Закрыть">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Вставьте блок для импорта</label>
+        <textarea id="import-text" style="min-height:140px;font-family:var(--font-mono);font-size:12.5px;" placeholder="090011317 | статус=... | категория=готово | госпошлина=оплачена"></textarea>
+      </div>
+      <div id="import-preview"></div>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div class="modal-foot-right">
+        <button id="import-cancel" class="btn-ghost">Отмена</button>
+        <button id="import-preview-btn" class="btn-ghost">Показать изменения</button>
+        <button id="import-apply-btn" class="btn-primary" hidden>Применить</button>
       </div>
     </div>
   </div>
