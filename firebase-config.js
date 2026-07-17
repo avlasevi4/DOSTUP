@@ -10,14 +10,14 @@
 // ============================================================================
 
 export const firebaseConfig = {
-  apiKey: "ВСТАВЬТЕ_СЮДА",
-  authDomain: "ВСТАВЬТЕ_СЮДА.firebaseapp.com",
-  projectId: "ВСТАВЬТЕ_СЮДА",
-  storageBucket: "ВСТАВЬТЕ_СЮДА.appspot.com",
-  messagingSenderId: "ВСТАВЬТЕ_СЮДА",
-  appId: "ВСТАВЬТЕ_СЮДА"
+  apiKey: "AIzaSyBbV0lY1z17Jx_UdtPYQoKgbv_L-TGLlf4",
+  authDomain: "mrg37-b1669.firebaseapp.com",
+  projectId: "mrg37-b1669",
+  storageBucket: "mrg37-b1669.firebasestorage.app",
+  messagingSenderId: "461981527800",
+  appId: "1:461981527800:web:6dfb93453a11f41783950d"
 };
 
 // Код доступа к сайту (простая защита от случайных посторонних — НЕ полноценная
 // авторизация). Смените на свой перед публикацией.
-export const ACCESS_CODE = "gmi2026";
+export const ACCESS_CODE = "mrg37";
