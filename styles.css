@@ -1,0 +1,260 @@
+/* ==========================================================================
+   ДИЗАЙН-ТОКЕНЫ
+   Тема: канцелярский реестр / штамп суда. Тёплая бумага, чернильно-синий,
+   штамповые акценты (красный/золото/шалфей) вместо шаблонных cream+terracotta.
+   ========================================================================== */
+:root{
+  --ink:        #1E2A3A;   /* основной текст, тёмно-синий, почти чёрный */
+  --ink-soft:   #4B5A6B;   /* вторичный текст */
+  --paper:      #EFECE2;   /* тёплая бумага, приглушённая */
+  --paper-lift: #F8F6EF;   /* карточки поверх бумаги */
+  --line:       #D8D2C0;   /* волосяные линии реестра */
+  --stamp-blue: #2B4C7E;   /* основной акцент — цвет штампа */
+  --stamp-blue-dark: #1F3A63;
+  --stamp-red:  #9B3226;   /* проблема / отказано */
+  --seal-gold:  #A9832E;   /* ожидание / частично */
+  --sage:       #4F6E56;   /* решено / не требуется / оплачено */
+  --sage-bg:    #E4E9E1;
+  --red-bg:     #F3E1DD;
+  --gold-bg:    #F1E7D2;
+  --blue-bg:    #E3E9F1;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+  --radius: 3px;
+}
+
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+[hidden]{ display:none !important; }
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-body);
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{ font-family:var(--font-display); font-weight:600; margin:0; color:var(--ink); }
+button{ font-family:var(--font-body); cursor:pointer; }
+input,select,textarea{ font-family:var(--font-body); }
+
+/* ==========================================================================
+   ЭКРАН ДОСТУПА
+   ========================================================================== */
+.gate{
+  position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  background:var(--ink); z-index:100;
+}
+.gate-card{
+  background:var(--paper-lift); padding:48px 40px; border-radius:var(--radius);
+  width:320px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.4);
+}
+.gate-seal{
+  width:56px; height:56px; border:2px solid var(--stamp-blue); border-radius:50%;
+  color:var(--stamp-blue); font-family:var(--font-mono); font-weight:600; font-size:14px;
+  display:flex; align-items:center; justify-content:center; margin:0 auto 20px;
+  letter-spacing:1px;
+}
+.gate-card h1{ font-size:22px; margin-bottom:4px; }
+.gate-sub{ color:var(--ink-soft); font-size:13px; margin:0 0 24px; }
+#gate-input{
+  width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:var(--radius);
+  font-size:15px; margin-bottom:12px; background:#fff;
+}
+#gate-submit{
+  width:100%; padding:12px; background:var(--stamp-blue); color:#fff; border:none;
+  border-radius:var(--radius); font-size:14px; font-weight:600; letter-spacing:.3px;
+}
+#gate-submit:hover{ background:var(--stamp-blue-dark); }
+.gate-error{ color:var(--stamp-red); font-size:13px; margin-top:10px; }
+
+/* ==========================================================================
+   ШАПКА / "ШТАМП"
+   ========================================================================== */
+.masthead{ background:var(--ink); color:var(--paper-lift); }
+.masthead-inner{
+  max-width:1100px; margin:0 auto; padding:32px 28px;
+  display:flex; align-items:center; gap:28px;
+}
+.stamp{ position:relative; width:120px; height:120px; flex:none; }
+.stamp-ring{ width:100%; height:100%; position:absolute; inset:0; }
+.stamp-ring path{ fill:none; }
+.stamp-ring text{ fill: var(--stamp-blue); opacity:.85; font-family:var(--font-mono); }
+.stamp-core{
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; border:2px solid var(--stamp-blue); border-radius:50%;
+  width:78px; height:78px; margin:auto; opacity:.95; transform:rotate(-3deg);
+}
+.stamp-num{ font-family:var(--font-display); font-size:28px; font-weight:700; color:var(--stamp-blue); line-height:1; }
+.stamp-label{ font-family:var(--font-mono); font-size:9px; letter-spacing:1.5px; color:var(--stamp-blue); text-transform:uppercase; margin-top:2px; }
+
+.masthead-text{ flex:1; min-width:0; }
+.eyebrow{ font-family:var(--font-mono); font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#8FA3BD; margin:0 0 6px; }
+.masthead-text h1{ color:#fff; font-size:30px; }
+.masthead-sub{ font-family:var(--font-mono); font-size:12.5px; color:#8FA3BD; margin:8px 0 0; }
+
+.masthead-actions{ display:flex; gap:10px; flex:none; }
+.btn-ghost{
+  background:transparent; border:1px solid #3F5474; color:#DCE5F0; padding:9px 16px;
+  border-radius:var(--radius); font-size:13px; transition:.15s;
+}
+.btn-ghost:hover{ background:#2C3D53; }
+.btn-primary{
+  background:var(--stamp-blue); border:1px solid var(--stamp-blue); color:#fff; padding:9px 16px;
+  border-radius:var(--radius); font-size:13px; font-weight:600;
+}
+.btn-primary:hover{ background:var(--stamp-blue-dark); }
+.btn-danger{ background:transparent; border:1px solid var(--stamp-red); color:var(--stamp-red); padding:9px 16px; border-radius:var(--radius); font-size:13px; }
+.btn-danger:hover{ background:var(--red-bg); }
+
+/* ==========================================================================
+   ВКЛАДКИ
+   ========================================================================== */
+.tabs{
+  display:flex; gap:2px; max-width:1100px; margin:0 auto; padding:0 28px;
+  border-bottom:1px solid var(--line);
+}
+.tab{
+  background:none; border:none; padding:14px 18px; font-size:13.5px; font-weight:500;
+  color:var(--ink-soft); border-bottom:2px solid transparent; margin-bottom:-1px;
+}
+.tab.active{ color:var(--stamp-blue); border-bottom-color:var(--stamp-blue); }
+.tab:hover:not(.active){ color:var(--ink); }
+
+.content{ max-width:1100px; margin:0 auto; padding:28px; }
+.tab-panel{ display:none; }
+.tab-panel.active{ display:block; }
+
+/* ==========================================================================
+   СВОДНАЯ ПОЛОСА
+   ========================================================================== */
+.summary-strip{
+  display:flex; flex-wrap:wrap; gap:10px; margin-bottom:28px;
+}
+.summary-chip{
+  background:var(--paper-lift); border:1px solid var(--line); border-radius:var(--radius);
+  padding:8px 14px; font-size:13px; display:flex; align-items:center; gap:7px;
+}
+.summary-chip b{ font-family:var(--font-mono); }
+
+/* ==========================================================================
+   ГРУППЫ / ТАБЛИЦЫ РЕЕСТРА
+   ========================================================================== */
+.group{ margin-bottom:32px; }
+.group-head{
+  display:flex; align-items:baseline; justify-content:space-between;
+  border-bottom:2px solid var(--ink); padding-bottom:8px; margin-bottom:2px;
+}
+.group-head h2{ font-size:17px; }
+.group-count{ font-family:var(--font-mono); font-size:12px; color:var(--ink-soft); }
+
+.case-row{
+  display:grid; grid-template-columns:36px 1fr auto auto 32px;
+  gap:16px; align-items:center; padding:13px 4px; border-bottom:1px solid var(--line);
+  cursor:pointer; transition:background .1s;
+}
+.case-row:hover{ background:var(--paper-lift); }
+.case-num{ font-family:var(--font-mono); font-size:13px; color:var(--ink-soft); }
+.case-name{ font-weight:500; }
+.case-account{ font-family:var(--font-mono); font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
+.case-status{ font-size:13.5px; max-width:420px; }
+.case-fee{ font-size:12px; white-space:nowrap; }
+.case-edit-icon{ color:var(--ink-soft); font-size:16px; text-align:center; }
+
+.badge{
+  display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px;
+  font-size:11.5px; font-weight:600; white-space:nowrap;
+}
+.badge-done{ background:var(--sage-bg); color:var(--sage); }
+.badge-problem{ background:var(--red-bg); color:var(--stamp-red); }
+.badge-wait{ background:var(--gold-bg); color:var(--seal-gold); }
+.badge-progress{ background:var(--blue-bg); color:var(--stamp-blue); }
+.badge-none{ background:#EAE7DC; color:var(--ink-soft); }
+
+/* ==========================================================================
+   СУДЕБНОЕ ПРОИЗВОДСТВО
+   ========================================================================== */
+.panel-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.court-card{
+  background:var(--paper-lift); border:1px solid var(--line); border-radius:var(--radius);
+  padding:18px 20px; margin-bottom:14px; cursor:pointer; transition:.1s;
+  display:grid; grid-template-columns:20px 1fr auto; gap:16px; align-items:start;
+}
+.court-card:hover{ border-color:var(--stamp-blue); }
+.court-dot{ font-size:16px; line-height:1; padding-top:2px; }
+.court-name{ font-weight:600; font-size:15px; }
+.court-meta{ font-family:var(--font-mono); font-size:12px; color:var(--ink-soft); margin-top:4px; }
+.court-hearing{ text-align:right; font-size:13px; }
+.court-hearing b{ font-family:var(--font-mono); color:var(--stamp-blue); }
+
+/* ==========================================================================
+   ЖУРНАЛ
+   ========================================================================== */
+.log-list{ list-style:none; margin:0; padding:0; }
+.log-list li{
+  border-left:2px solid var(--stamp-blue); padding:4px 0 18px 20px; margin-left:6px;
+  position:relative; font-size:13.5px;
+}
+.log-list li::before{
+  content:''; position:absolute; left:-5px; top:6px; width:8px; height:8px;
+  border-radius:50%; background:var(--stamp-blue);
+}
+.log-date{ font-family:var(--font-mono); font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:2px; }
+
+/* ==========================================================================
+   МОДАЛЬНОЕ ОКНО
+   ========================================================================== */
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(30,42,58,.55); z-index:200;
+  display:flex; align-items:center; justify-content:center; padding:20px;
+}
+.modal{
+  background:var(--paper-lift); border-radius:var(--radius); width:100%; max-width:560px;
+  max-height:88vh; display:flex; flex-direction:column; box-shadow:0 24px 70px rgba(0,0,0,.35);
+}
+.modal-head{ display:flex; justify-content:space-between; align-items:center; padding:20px 22px; border-bottom:1px solid var(--line); }
+.modal-close{ background:none; border:none; font-size:22px; color:var(--ink-soft); line-height:1; }
+.modal-body{ padding:20px 22px; overflow-y:auto; }
+.modal-foot{ padding:16px 22px; border-top:1px solid var(--line); display:flex; justify-content:space-between; }
+.modal-foot-right{ display:flex; gap:10px; }
+
+.field{ margin-bottom:16px; }
+.field label{ display:block; font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:6px; text-transform:uppercase; letter-spacing:.4px; }
+.field input, .field select, .field textarea{
+  width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius);
+  font-size:14px; background:#fff; color:var(--ink);
+}
+.field textarea{ min-height:70px; resize:vertical; font-family:var(--font-body); }
+.field-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+/* ==========================================================================
+   ПОДВАЛ
+   ========================================================================== */
+.foot{ max-width:1100px; margin:0 auto; padding:16px 28px 40px; font-size:12px; color:var(--ink-soft); }
+.conn-status{ color:var(--sage); }
+.conn-status.offline{ color:var(--stamp-red); }
+.foot-sep{ margin:0 6px; }
+
+/* ==========================================================================
+   АДАПТИВНОСТЬ
+   ========================================================================== */
+@media (max-width: 720px){
+  .masthead-inner{ flex-wrap:wrap; }
+  .stamp{ width:84px; height:84px; }
+  .stamp-core{ width:56px; height:56px; }
+  .stamp-num{ font-size:20px; }
+  .masthead-actions{ width:100%; }
+  .case-row{ grid-template-columns:24px 1fr; grid-template-areas:"num name" ". status" ". fee"; }
+  .case-fee, .case-status{ grid-column:2; }
+  .case-edit-icon{ display:none; }
+  .field-row{ grid-template-columns:1fr; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ transition:none !important; }
+}
+
+:focus-visible{ outline:2px solid var(--stamp-blue); outline-offset:2px; }
