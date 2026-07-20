@@ -14,5 +14,5 @@ export const firebaseConfig = {
 // Коды доступа (простая защита, НЕ полноценная авторизация).
 // Администратор видит экспорт/импорт и журнал изменений, сотрудник — нет.
 // Смените оба значения на свои перед тем, как передать ссылку коллеге.
-export const ADMIN_CODE = "mrg37admin";
-export const STAFF_CODE = "mrg37";
+export const ADMIN_CODE = "037";
+export const STAFF_CODE = "MRG";

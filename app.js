@@ -93,6 +93,7 @@ function boot(){
   seedIfEmpty()
     .then(migrateLegacyCases)
     .then(migrateLegacyCourt)
+    .then(fixLegacyNotesOnce)
     .then(() => {
       listenCases();
       listenCourt();
@@ -164,6 +165,51 @@ async function migrateLegacyCourt(){
   if(jobs.length) await Promise.all(jobs);
 }
 
+// Разовая правка: у части дел после первой миграции в "примечание" попал
+// полный старый текст статуса, который задваивался с новым фиксированным
+// названием статуса (наложение текста в интерфейсе). Также здесь же —
+// точечное обновление карточки Шуркиной по индексу от 20.07.2026.
+// Срабатывает один раз на документ (флаг notesFixed), дальше не трогает.
+const NOTE_FIXES = {
+  '100021470': { note:'Заседание 30.07.2026, 10:00' },
+  '100004288': { note:'Реестр получен, ждём оригинал выписки с л/с' },
+  '090011317': { note:'15.07.2026' },
+  '090007807': { note:'15.07.2026' },
+  '090024016': { note:'15.07.2026' },
+  '050002779': { note:'' },
+  '100011188': { note:'16.07.2026' },
+  '110062695': { note:'17.07.2026, ждём реестр' },
+  '010504941': { note:'Ждём точный период начисления долга (151 463,54 руб.)' },
+  '130000154': { statusKey:'sent_court', note:'Иск на подписи (20.07.2026)' },
+  '080020736': { note:'Задолженность не просужена' },
+  '010016290': { note:'' },
+  '010015694': { note:'' },
+  '100007765': { note:'' },
+  '020005837': { note:'' },
+  '100005712': { note:'01.07.2026' },
+  '130000135': { note:'08.07.2026' },
+  '130001042': { note:'08.07.2026' },
+};
+async function fixLegacyNotesOnce(){
+  const snap = await getDocs(collection(db, 'cases'));
+  const jobs = [];
+  let shurkinaFixed = false;
+  snap.docs.forEach(d => {
+    const c = d.data();
+    if(c.notesFixed) return;
+    const fix = NOTE_FIXES[c.account];
+    const patch = { notesFixed: true };
+    if(fix){
+      if(fix.note !== undefined) patch.note = fix.note;
+      if(fix.statusKey) patch.statusKey = fix.statusKey;
+      if(c.account === '130000154' && fix.statusKey) shurkinaFixed = true;
+    }
+    jobs.push(updateDoc(doc(db, 'cases', d.id), patch));
+  });
+  if(jobs.length) await Promise.all(jobs);
+  if(shurkinaFixed) await addLog('Шуркина: статус обновлён — иск на подписи (по данным индекса от 20.07.2026).');
+}
+
 function listenCases(){
   onSnapshot(collection(db, 'cases'), snap => {
     CASES = snap.docs.map(d => ({ id:d.id, ...d.data() }));
@@ -224,7 +270,10 @@ function renderGroups(){
           <div class="case-name">${escapeHtml(c.name)}</div>
           <div class="case-account">л/с ${escapeHtml(c.account || '—')}</div>
         </div>
-        <div class="case-status"><span class="badge badge-${def.badge}">${def.icon} ${escapeHtml(def.label)}${c.note ? ' — ' + escapeHtml(c.note) : ''}</span></div>
+        <div class="case-status">
+          <span class="badge badge-${def.badge}">${def.icon} ${escapeHtml(def.label)}</span>
+          ${c.note ? `<div class="case-note">${escapeHtml(c.note)}</div>` : ''}
+        </div>
         <div class="case-fee">💳 ${c.feeKey === 'paid' ? 'оплачена' : 'не оплачена'}</div>
         <div class="case-edit-icon">✎</div>
       `;
@@ -587,6 +636,13 @@ window.switchTabByName = function(name){
   const btn = document.querySelector(`.tab[data-tab="${name}"]`);
   if(btn) btn.click();
 };
+
+// При самой первой загрузке страницы ни один клик по вкладке ещё не
+// произошёл — без этого стартовая активная вкладка оставалась невидимой
+// (opacity:0) до первого переключения между вкладками.
+document.querySelectorAll('.tab-panel.active').forEach(p => {
+  requestAnimationFrame(() => p.classList.add('panel-enter'));
+});
 
 /* ---------------------------------------------------------------------------
    ЗАМЕТКА / ЭКСПОРТ
