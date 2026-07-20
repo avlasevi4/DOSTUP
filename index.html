@@ -81,9 +81,24 @@
     <!-- ---------- ВКЛАДКА: ЖУРНАЛ (только администратор) ---------- -->
     <section id="tab-log" class="tab-panel" data-admin-only>
       <div class="panel-head">
-        <h2>Журнал изменений</h2>
+        <div>
+          <h2>Журнал изменений</h2>
+          <p class="panel-sub">Новые операции записываются с точными значениями до и после изменения.</p>
+        </div>
+        <button id="create-backup-btn" class="btn-primary">Создать снимок базы</button>
       </div>
-      <ol id="log-list" class="log-list"></ol>
+
+      <section class="backup-panel" aria-labelledby="backup-title">
+        <div class="backup-head">
+          <div>
+            <h3 id="backup-title">Резервные копии</h3>
+            <p>Снимок включает реестр и судебное производство. Журнал и сами резервные копии при восстановлении не удаляются.</p>
+          </div>
+        </div>
+        <div id="backup-list" class="backup-list"></div>
+      </section>
+
+      <ol id="log-list" class="log-list detailed-log"></ol>
     </section>
 
   </main>

@@ -3,7 +3,7 @@ import { SEED_CASES, SEED_COURT_CASES, SEED_LOG } from './seed-data.js';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import {
-  getFirestore, collection, doc, getDocs, addDoc, updateDoc,
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
   onSnapshot, writeBatch, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
@@ -14,6 +14,7 @@ let db;
 let CASES = [];       // локальный кэш дел (живёт из onSnapshot)
 let COURT = [];
 let LOGS = [];
+let BACKUPS = [];
 let modalHearings = [];   // временный список заседаний, пока открыта карточка судопроизводства
 let importDiffs = [];     // изменения, посчитанные при предпросмотре импорта
 let bootStarted = false;
@@ -103,10 +104,12 @@ async function boot(){
     await migrateLegacyCases();
     await migrateLegacyCourt();
     await fixLegacyNotesOnce();
+    await ensureBaselineBackup();
 
     listenCases();
     listenCourt();
     listenLogs();
+    listenBackups();
   }catch(err){
     setConnectionStatus('offline', '● ошибка подключения');
     reportError('Не удалось запустить приложение', err);
@@ -260,23 +263,91 @@ function handleListenerError(section, err){
   reportError(`Ошибка загрузки ${section}`, err, false);
 }
 
-function logPayload(text){
-  return { date: todayLocalIso(), createdAt:Date.now(), text };
+function currentRole(){
+  return sessionStorage.getItem('gmi-role') || 'staff';
 }
 
-function addLogToBatch(batch, text){
-  batch.set(doc(collection(db, 'logs')), logPayload(text));
+function actorLabel(role=currentRole()){
+  return role === 'admin' ? 'Администратор' : 'Сотрудник';
+}
+
+function recordData(record){
+  if(!record) return null;
+  const { id, ...data } = record;
+  return JSON.parse(JSON.stringify(data));
+}
+
+function logPayload(text, extra={}){
+  return {
+    date: todayLocalIso(),
+    createdAt: Date.now(),
+    text,
+    actorRole: currentRole(),
+    actorLabel: actorLabel(),
+    action: 'note',
+    reversible: false,
+    ...extra
+  };
+}
+
+function operationLogPayload({ text, action, items, sourceLogId='', meta={} }){
+  return logPayload(text, {
+    action,
+    items: JSON.parse(JSON.stringify(items || [])),
+    reversible: true,
+    undoneAt: null,
+    sourceLogId,
+    meta
+  });
 }
 
 async function addLog(text){
   await addDoc(collection(db, 'logs'), logPayload(text));
 }
 
-async function commitWithLog(mutator, logText){
+async function commitOperation(mutator, { text, action, items, meta={} }){
   const batch = writeBatch(db);
   mutator(batch);
-  addLogToBatch(batch, logText);
+  batch.set(doc(collection(db, 'logs')), operationLogPayload({ text, action, items, meta }));
   await batch.commit();
+}
+
+async function readWorkingSnapshot(){
+  const [casesSnap, courtSnap, counterSnap] = await Promise.all([
+    getDocs(collection(db, 'cases')),
+    getDocs(collection(db, 'courtCases')),
+    getDoc(doc(db, 'meta', 'counters'))
+  ]);
+  return {
+    cases: casesSnap.docs.map(d => ({ id:d.id, data:d.data() })),
+    courtCases: courtSnap.docs.map(d => ({ id:d.id, data:d.data() })),
+    counters: counterSnap.exists() ? counterSnap.data() : null
+  };
+}
+
+async function ensureBaselineBackup(){
+  const baselineRef = doc(db, 'backups', 'baseline-v2');
+  const existing = await getDoc(baselineRef);
+  if(existing.exists()) return;
+  const snapshot = await readWorkingSnapshot();
+  await setDoc(baselineRef, {
+    name: 'Базовый снимок перед внедрением отмены изменений',
+    type: 'baseline',
+    date: todayLocalIso(),
+    createdAt: Date.now(),
+    actorRole: currentRole(),
+    actorLabel: actorLabel(),
+    version: 2,
+    ...snapshot
+  });
+}
+
+function listenBackups(){
+  onSnapshot(collection(db, 'backups'), snap => {
+    BACKUPS = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+      .sort((a,b) => (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
+    renderBackups();
+  }, err => reportError('Ошибка загрузки резервных копий', err, false));
 }
 
 /* ---------------------------------------------------------------------------
@@ -439,11 +510,226 @@ window.openCourtCardById = function(id){
 /* ---------------------------------------------------------------------------
    РЕНДЕР: ЖУРНАЛ
 --------------------------------------------------------------------------- */
+const FIELD_LABELS = {
+  num:'Номер', name:'ФИО', account:'Лицевой счёт', address:'Адрес',
+  statusKey:'Статус', note:'Примечание', feeKey:'Госпошлина', protected:'Защищённая запись',
+  court:'Суд', caseNumber:'Номер дела', filedDate:'Дата подачи', judge:'Судья',
+  dot:'Статус производства', notes:'Заметки', hearings:'Заседания', nextCaseNum:'Следующий номер'
+};
+
+function formatAuditValue(field, value){
+  if(value === null || value === undefined || value === '') return '—';
+  if(field === 'statusKey') return (STATUS_DEFS[value] || {}).label || String(value);
+  if(field === 'feeKey') return value === 'paid' ? 'Оплачена' : 'Не оплачена';
+  if(field === 'dot') return ({blue:'В процессе', done:'Удовлетворено', denied:'Отказано', partial:'Частично'})[value] || String(value);
+  if(field === 'protected') return value ? 'Да' : 'Нет';
+  if(field === 'filedDate') return formatRuDate(value);
+  if(field === 'hearings'){
+    if(!Array.isArray(value) || !value.length) return 'Нет заседаний';
+    return value.map(h => `${formatRuDateTime(h.date)}${h.note ? ` — ${h.note}` : ''}`).join('; ');
+  }
+  if(typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function auditChanges(item){
+  const keys = [...new Set([...Object.keys(item.before || {}), ...Object.keys(item.after || {})])]
+    .filter(k => !['notesFixed'].includes(k));
+  if(item.before === null){
+    return keys.map(k => ({ label:FIELD_LABELS[k] || k, before:'—', after:formatAuditValue(k, item.after?.[k]) }));
+  }
+  if(item.after === null){
+    return keys.map(k => ({ label:FIELD_LABELS[k] || k, before:formatAuditValue(k, item.before?.[k]), after:'—' }));
+  }
+  return keys.filter(k => !deepEqual(item.before?.[k], item.after?.[k])).map(k => ({
+    label: FIELD_LABELS[k] || k,
+    before: formatAuditValue(k, item.before?.[k]),
+    after: formatAuditValue(k, item.after?.[k])
+  }));
+}
+
+function logActionLabel(action){
+  return ({
+    'case.update':'Изменение дела', 'case.create':'Добавление должника', 'case.delete':'Удаление должника',
+    'court.update':'Изменение судопроизводства', 'court.create':'Добавление в судопроизводство', 'court.delete':'Удаление из судопроизводства',
+    'import':'Массовый импорт', 'backup.restore':'Восстановление копии', 'undo':'Отмена операции', 'note':'Заметка'
+  })[action] || 'Изменение';
+}
+
 function renderLog(){
   const el = document.getElementById('log-list');
-  el.innerHTML = LOGS.map(l => `
-    <li><span class="log-date">${formatRuDate(l.date)}</span>${escapeHtml(l.text)}</li>
-  `).join('') || '<p style="color:var(--ink-soft)">Журнал пуст.</p>';
+  if(!el) return;
+  el.innerHTML = LOGS.map(l => {
+    const items = Array.isArray(l.items) ? l.items : [];
+    const details = items.length ? `
+      <details class="log-details">
+        <summary>Подробности (${items.length})</summary>
+        <div class="log-detail-list">
+          ${items.map(item => {
+            const changes = auditChanges(item);
+            return `<article class="log-target">
+              <h4>${escapeHtml(item.label || `${item.collection}/${item.docId}`)}</h4>
+              ${changes.length ? `<dl>${changes.map(ch => `
+                <div class="log-change"><dt>${escapeHtml(ch.label)}</dt><dd><span class="value-before">${escapeHtml(ch.before)}</span><span class="change-arrow">→</span><span class="value-after">${escapeHtml(ch.after)}</span></dd></div>
+              `).join('')}</dl>` : '<p class="log-no-change">Состав данных не изменился.</p>'}
+            </article>`;
+          }).join('')}
+        </div>
+      </details>` : '';
+    const canUndo = l.reversible && !l.undoneAt && items.length;
+    const undone = l.undoneAt ? `<span class="log-undone">Отменено ${formatRuDateTimeFromMs(l.undoneAt)}</span>` : '';
+    return `<li class="log-entry ${l.undoneAt ? 'is-undone' : ''}">
+      <div class="log-entry-head">
+        <div>
+          <span class="log-date">${formatRuDate(l.date)}${l.createdAt ? `, ${formatTimeFromMs(l.createdAt)}` : ''}</span>
+          <span class="log-action">${escapeHtml(logActionLabel(l.action))}</span>
+          <span class="log-actor">${escapeHtml(l.actorLabel || 'Старая запись')}</span>
+        </div>
+        ${undone}
+      </div>
+      <div class="log-text">${escapeHtml(l.text)}</div>
+      ${details}
+      ${canUndo ? `<button type="button" class="btn-undo" data-log-id="${escapeHtml(l.id)}">Отменить это изменение</button>` : ''}
+    </li>`;
+  }).join('') || '<p style="color:var(--ink-soft)">Журнал пуст.</p>';
+
+  el.querySelectorAll('.btn-undo').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const log = LOGS.find(x => x.id === btn.dataset.logId);
+      if(!log) return;
+      if(!confirm(`Отменить операцию «${log.text}»?`)) return;
+      await performAction(btn, 'Отмена…', async () => undoOperation(log));
+    });
+  });
+}
+
+function renderBackups(){
+  const el = document.getElementById('backup-list');
+  if(!el) return;
+  el.innerHTML = BACKUPS.map(b => `
+    <article class="backup-card">
+      <div class="backup-info">
+        <b>${escapeHtml(b.name || 'Резервная копия')}</b>
+        <span>${formatRuDate(b.date)}${b.createdAt ? `, ${formatTimeFromMs(b.createdAt)}` : ''} · дел: ${(b.cases||[]).length} · судебных карточек: ${(b.courtCases||[]).length}</span>
+      </div>
+      <div class="backup-actions">
+        <button type="button" class="btn-ghost backup-download" data-backup-id="${escapeHtml(b.id)}">Скачать JSON</button>
+        <button type="button" class="btn-danger backup-restore" data-backup-id="${escapeHtml(b.id)}">Восстановить</button>
+      </div>
+    </article>
+  `).join('') || '<p class="backup-empty">Резервных копий пока нет.</p>';
+
+  el.querySelectorAll('.backup-download').forEach(btn => btn.addEventListener('click', () => {
+    const backup = BACKUPS.find(x => x.id === btn.dataset.backupId);
+    if(backup) downloadJson(backup, `DOSTUP-backup-${backup.date || todayLocalIso()}.json`);
+  }));
+  el.querySelectorAll('.backup-restore').forEach(btn => btn.addEventListener('click', async () => {
+    const backup = BACKUPS.find(x => x.id === btn.dataset.backupId);
+    if(!backup) return;
+    if(!confirm(`Полностью восстановить реестр и судебное производство из копии «${backup.name || backup.id}»?\n\nТекущее состояние будет сохранено в подробном журнале, поэтому эту операцию тоже можно будет отменить.`)) return;
+    await performAction(btn, 'Восстановление…', async () => restoreBackup(backup));
+  }));
+}
+
+async function createManualBackup(){
+  const snapshot = await readWorkingSnapshot();
+  const createdAt = Date.now();
+  await addDoc(collection(db, 'backups'), {
+    name: `Ручной снимок ${formatRuDate(todayLocalIso())}, ${formatTimeFromMs(createdAt)}`,
+    type:'manual', date:todayLocalIso(), createdAt,
+    actorRole:currentRole(), actorLabel:actorLabel(), version:2,
+    ...snapshot
+  });
+}
+
+async function restoreBackup(backup){
+  const current = await readWorkingSnapshot();
+  const items = [];
+  const targetCollections = [
+    ['cases', current.cases || [], backup.cases || []],
+    ['courtCases', current.courtCases || [], backup.courtCases || []]
+  ];
+  targetCollections.forEach(([collectionName, beforeList, afterList]) => {
+    const beforeMap = new Map(beforeList.map(x => [x.id, x.data]));
+    const afterMap = new Map(afterList.map(x => [x.id, x.data]));
+    const ids = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+    ids.forEach(id => {
+      const before = beforeMap.has(id) ? beforeMap.get(id) : null;
+      const after = afterMap.has(id) ? afterMap.get(id) : null;
+      if(deepEqual(before, after)) return;
+      const labelData = after || before || {};
+      items.push({ collection:collectionName, docId:id, label:labelData.name || `${collectionName}/${id}`, before, after });
+    });
+  });
+
+  const maxNum = Math.max(0, ...(backup.cases || []).map(x => Number(x.data?.num)||0));
+  const targetCounter = backup.counters || { nextCaseNum:maxNum + 1 };
+  if(!deepEqual(current.counters, targetCounter)){
+    items.push({ collection:'meta', docId:'counters', label:'Счётчик номеров', before:current.counters, after:targetCounter });
+  }
+  if(!items.length){ showToast('Текущее состояние уже совпадает с этой копией.', 'info'); return; }
+  if(items.length > 450) throw new Error('Слишком много документов для одного атомарного восстановления.');
+
+  await commitOperation(batch => {
+    items.forEach(item => {
+      const ref = doc(db, item.collection, item.docId);
+      if(item.after === null) batch.delete(ref);
+      else batch.set(ref, item.after);
+    });
+  }, {
+    text:`Восстановлена резервная копия «${backup.name || backup.id}».`,
+    action:'backup.restore', items,
+    meta:{ backupId:backup.id }
+  });
+  showToast('Резервная копия восстановлена.', 'success');
+}
+
+async function undoOperation(log){
+  if(currentRole() !== 'admin') throw new ValidationError('Недостаточно прав.');
+  if(!log.reversible || log.undoneAt || !Array.isArray(log.items) || !log.items.length){
+    showToast('Эту запись нельзя отменить.', 'error');
+    throw new ValidationError();
+  }
+  const checks = await Promise.all(log.items.map(async item => {
+    const snap = await getDoc(doc(db, item.collection, item.docId));
+    return { item, current:snap.exists() ? snap.data() : null };
+  }));
+  const conflicts = checks.filter(x => !deepEqual(x.current, x.item.after));
+  if(conflicts.length){
+    showToast(`Отмена заблокирована: после этой операции ${conflicts.length} запись(и) уже изменялись. Сначала отмените более поздние изменения.`, 'error');
+    throw new ValidationError();
+  }
+
+  const inverseItems = log.items.map(item => ({
+    collection:item.collection, docId:item.docId, label:item.label,
+    before:item.after, after:item.before
+  }));
+  const batch = writeBatch(db);
+  inverseItems.forEach(item => {
+    const ref = doc(db, item.collection, item.docId);
+    if(item.after === null) batch.delete(ref);
+    else batch.set(ref, item.after);
+  });
+  const undoLogRef = doc(collection(db, 'logs'));
+  batch.update(doc(db, 'logs', log.id), {
+    undoneAt:Date.now(), undoneByActor:actorLabel(), undoneByLogId:undoLogRef.id
+  });
+  batch.set(undoLogRef, operationLogPayload({
+    text:`Отменена операция: ${log.text}`,
+    action:'undo', items:inverseItems, sourceLogId:log.id
+  }));
+  await batch.commit();
+  showToast('Изменение отменено.', 'success');
+}
+
+const createBackupBtn = document.getElementById('create-backup-btn');
+if(createBackupBtn){
+  createBackupBtn.addEventListener('click', async () => {
+    await performAction(createBackupBtn, 'Создание…', async () => {
+      await createManualBackup();
+      showToast('Резервная копия создана.', 'success');
+    });
+  });
 }
 
 /* ---------------------------------------------------------------------------
@@ -650,9 +936,14 @@ document.getElementById('modal-save').addEventListener('click', async () => {
       const patch = { statusKey, note: val('f-note').trim(), feeKey: val('f-feeKey') };
       const unchanged = patch.statusKey === c.statusKey && patch.note === (c.note||'') && patch.feeKey === c.feeKey;
       if(unchanged){ showToast('Изменений нет.', 'info'); closeModal(); return; }
-      await commitWithLog(
+      const before = recordData(c);
+      const after = { ...before, ...patch };
+      await commitOperation(
         batch => batch.update(doc(db, 'cases', c.id), patch),
-        `${c.name}: карточка обновлена — «${STATUS_DEFS[statusKey].label}».`
+        {
+          text:`${c.name}: карточка обновлена.`, action:'case.update',
+          items:[{ collection:'cases', docId:c.id, label:c.name, before, after }]
+        }
       );
 
     } else if(activeRecord.kind === 'newcase'){
@@ -679,11 +970,21 @@ document.getElementById('modal-save').addEventListener('click', async () => {
 
       await runTransaction(db, async transaction => {
         const counterSnap = await transaction.get(counterRef);
-        const storedNext = counterSnap.exists() ? Number(counterSnap.data().nextCaseNum) || localNext : localNext;
+        const counterBefore = counterSnap.exists() ? counterSnap.data() : null;
+        const storedNext = counterBefore ? Number(counterBefore.nextCaseNum) || localNext : localNext;
         createdNum = Math.max(storedNext, localNext);
-        transaction.set(counterRef, { nextCaseNum: createdNum + 1 }, { merge:true });
-        transaction.set(caseRef, { num:createdNum, ...payload });
-        transaction.set(logRef, logPayload(`${name}: добавлен новый должник в реестр (№${createdNum}).`));
+        const counterAfter = { ...(counterBefore || {}), nextCaseNum: createdNum + 1 };
+        transaction.set(counterRef, counterAfter);
+        const createdData = { num:createdNum, ...payload };
+        transaction.set(caseRef, createdData);
+        transaction.set(logRef, operationLogPayload({
+          text:`${name}: добавлен новый должник в реестр (№${createdNum}).`,
+          action:'case.create',
+          items:[
+            { collection:'cases', docId:caseRef.id, label:name, before:null, after:createdData },
+            { collection:'meta', docId:'counters', label:'Счётчик номеров', before:counterBefore, after:counterAfter }
+          ]
+        }));
       });
 
     } else {
@@ -716,11 +1017,18 @@ document.getElementById('modal-save').addEventListener('click', async () => {
         hearings: modalHearings.slice().sort((a,b) => new Date(a.date) - new Date(b.date))
       };
       const courtRef = isNew ? doc(collection(db, 'courtCases')) : doc(db, 'courtCases', c.id);
-      await commitWithLog(
+      const before = isNew ? null : recordData(c);
+      const after = isNew ? updated : { ...before, ...updated };
+      if(!isNew && deepEqual(before, after)){ showToast('Изменений нет.', 'info'); closeModal(); return; }
+      await commitOperation(
         batch => isNew ? batch.set(courtRef, updated) : batch.update(courtRef, updated),
-        isNew
-          ? `${updated.name}: заведено дело в судебном производстве (${updated.court}).`
-          : `${updated.name}: обновлена карточка судебного производства.`
+        {
+          text:isNew
+            ? `${updated.name}: заведено дело в судебном производстве (${updated.court}).`
+            : `${updated.name}: обновлена карточка судебного производства.`,
+          action:isNew ? 'court.create' : 'court.update',
+          items:[{ collection:'courtCases', docId:courtRef.id, label:updated.name, before, after }]
+        }
       );
     }
     closeModal();
@@ -735,14 +1043,19 @@ modalDelete.addEventListener('click', async () => {
     showToast('Сначала удалите связанное дело из судебного производства.', 'error');
     return;
   }
-  if(!confirm('Удалить эту запись? Действие необратимо.')) return;
+  if(!confirm('Удалить эту запись? При необходимости операцию можно будет отменить через журнал администратора.')) return;
 
   await performAction(modalDelete, 'Удаление…', async () => {
     const coll = activeRecord.kind === 'case' ? 'cases' : 'courtCases';
     const record = activeRecord.data;
-    await commitWithLog(
+    const before = recordData(record);
+    await commitOperation(
       batch => batch.delete(doc(db, coll, record.id)),
-      `Запись «${record.name}» удалена.`
+      {
+        text:`Запись «${record.name}» удалена.`,
+        action:activeRecord.kind === 'case' ? 'case.delete' : 'court.delete',
+        items:[{ collection:coll, docId:record.id, label:record.name, before, after:null }]
+      }
     );
     closeModal();
     showToast('Запись удалена.', 'success');
@@ -880,7 +1193,9 @@ document.getElementById('import-preview-btn').addEventListener('click', () => {
     if(newFeeKey !== existing.feeKey) changes.push(`госпошлина: «${existing.feeKey==='paid'?'оплачена':'не оплачена'}» → «${newFeeKey==='paid'?'оплачена':'не оплачена'}»`);
     if(!changes.length) return { ok:false, text:`${escapeHtml(existing.name)}: изменений нет — пропущено.` };
 
-    importDiffs.push({ id: existing.id, name: existing.name, statusKey:newStatusKey, note:newNote, feeKey:newFeeKey });
+    const before = recordData(existing);
+    const after = { ...before, statusKey:newStatusKey, note:newNote, feeKey:newFeeKey };
+    importDiffs.push({ id: existing.id, name: existing.name, statusKey:newStatusKey, note:newNote, feeKey:newFeeKey, before, after });
     return { ok:true, text:`<b>${escapeHtml(existing.name)}</b>: ${changes.join('; ')}` };
   }).filter(Boolean);
 
@@ -894,11 +1209,17 @@ document.getElementById('import-apply-btn').addEventListener('click', async e =>
   const n = importDiffs.length;
   if(!n) return;
   await performAction(e.currentTarget, 'Применение…', async () => {
-    await commitWithLog(batch => {
+    const items = importDiffs.map(d => ({
+      collection:'cases', docId:d.id, label:d.name, before:d.before, after:d.after
+    }));
+    await commitOperation(batch => {
       importDiffs.forEach(d => {
         batch.update(doc(db, 'cases', d.id), { statusKey:d.statusKey, note:d.note, feeKey:d.feeKey });
       });
-    }, `Импорт из чата «Учёт статусов»: обновлено дел — ${n}.`);
+    }, {
+      text:`Импорт из чата «Учёт статусов»: обновлено дел — ${n}.`,
+      action:'import', items
+    });
     importDiffs = [];
     closeImport();
     showToast(`Импорт выполнен: обновлено дел — ${n}.`, 'success');
@@ -914,6 +1235,29 @@ function val(id){ return document.getElementById(id)?.value ?? ''; }
 function normalizeAccount(value){ return String(value||'').replace(/\s+/g, ''); }
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
 function escapeMdCell(value){ return String(value??'').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
+function canonicalJson(value){
+  if(value === undefined) return 'undefined';
+  if(value === null || typeof value !== 'object') return JSON.stringify(value);
+  if(Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+}
+function deepEqual(a,b){ return canonicalJson(a) === canonicalJson(b); }
+function formatTimeFromMs(ms){
+  const d = new Date(Number(ms));
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+function formatRuDateTimeFromMs(ms){
+  const d = new Date(Number(ms));
+  if(Number.isNaN(d.getTime())) return '—';
+  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}, ${formatTimeFromMs(ms)}`;
+}
+function downloadJson(data, filename){
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 function todayLocalIso(){
   const now = new Date();
   const y = now.getFullYear();
