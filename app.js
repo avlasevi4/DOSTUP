@@ -289,7 +289,11 @@ function listenLogs(){
     LOGS = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (b.date||'').localeCompare(a.date||'') || (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
     renderLog();
-    if(LOGS[0]) document.getElementById('last-updated').textContent = 'обновлено ' + formatRuDate(LOGS[0].date);
+    if(LOGS[0]){
+      const last = LOGS[0];
+      const time = last.createdAt ? `, ${formatShortTimeFromMs(last.createdAt)}` : '';
+      document.getElementById('last-updated').textContent = `обновлено ${formatRuDate(last.date)}${time}`;
+    }
     markListenerReady('logs');
   }, err => handleListenerError('журнала изменений', err));
 }
@@ -1281,6 +1285,10 @@ function deepEqual(a,b){ return canonicalJson(a) === canonicalJson(b); }
 function formatTimeFromMs(ms){
   const d = new Date(Number(ms));
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+function formatShortTimeFromMs(ms){
+  const d = new Date(Number(ms));
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
 }
 function formatRuDateTimeFromMs(ms){
   const d = new Date(Number(ms));
