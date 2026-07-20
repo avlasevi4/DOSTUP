@@ -15,7 +15,7 @@ export const SEED_CASES = [
   { num:7,  name:'Жуков Михаил Германович',        account:'100011188', address:'', statusKey:'sent_court',   note:'16.07.2026',                                            feeKey:'paid',   protected:true },
   { num:8,  name:'Музанков Василий Николаевич',    account:'110062695', address:'', statusKey:'sent_debtor',  note:'17.07.2026, ждём реестр',                               feeKey:'unpaid', protected:true },
   { num:9,  name:'Сивенков Андрей Евгеньевич',     account:'010504941', address:'', statusKey:'draft',        note:'Остался один пункт: период долга',                     feeKey:'unpaid', protected:true },
-  { num:10, name:'Шуркина Лидия Леонидовна',       account:'130000154', address:'', statusKey:'problem',      note:'Акт получен, но уведомление на чужой л/с',              feeKey:'unpaid', protected:true },
+  { num:10, name:'Шуркина Лидия Леонидовна',       account:'130000154', address:'', statusKey:'signing',      note:'Иск на подписи (20.07.2026)',                           feeKey:'unpaid', protected:true },
   { num:11, name:'Колегова Светлана Александровна',account:'080020736', address:'', statusKey:'postponed',    note:'Задолженность не просужена',                            feeKey:'unpaid', protected:true },
   { num:12, name:'Соколов Роман Сергеевич',        account:'010016290', address:'', statusKey:'disconnected', note:'',                                                      feeKey:'unpaid', protected:true },
   { num:13, name:'Говасари Яна Яшаевна',           account:'010015694', address:'', statusKey:'disconnected', note:'',                                                      feeKey:'unpaid', protected:true },

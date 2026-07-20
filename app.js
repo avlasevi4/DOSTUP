@@ -27,7 +27,8 @@ const listenerReady = { cases:false, court:false, logs:false };
 const STATUS_DEFS = {
   sent_court:   { label:'Направлено в суд',                         icon:'✅', badge:'done',     group:'A' },
   sent_debtor:  { label:'Направлено ответчику, ждём реестр',        icon:'📮', badge:'progress', group:'A' },
-  draft:        { label:'Черновик готовится',                      icon:'🟡', badge:'wait',     group:'B' },
+  signing:      { label:'Иск на подписи',                            icon:'✍️', badge:'progress', group:'A' },
+  draft:        { label:'Черновик готовится',                       icon:'🟡', badge:'wait',     group:'B' },
   waiting_doc:  { label:'Ожидаем документы',              icon:'⏸', badge:'wait',     group:'B' },
   problem:      { label:'Проблема — требует решения',               icon:'🔴', badge:'problem',  group:'B' },
   postponed:    { label:'Отложено — долг ещё не просужен',          icon:'⏳', badge:'wait',     group:'V' },
@@ -104,6 +105,7 @@ async function boot(){
     await migrateLegacyCases();
     await migrateLegacyCourt();
     await fixLegacyNotesOnce();
+    await migrateStatusConsistencyV1();
     await ensureBaselineBackup();
 
     listenCases();
@@ -193,7 +195,7 @@ const NOTE_FIXES = {
   '100011188': { note:'16.07.2026' },
   '110062695': { note:'17.07.2026, ждём реестр' },
   '010504941': { note:'Ждём точный период начисления долга (151 463,54 руб.)' },
-  '130000154': { statusKey:'sent_court', note:'Иск на подписи (20.07.2026)' },
+  '130000154': { statusKey:'signing', note:'Иск на подписи (20.07.2026)' },
   '080020736': { note:'Задолженность не просужена' },
   '010016290': { note:'' },
   '010015694': { note:'' },
@@ -221,6 +223,46 @@ async function fixLegacyNotesOnce(){
   });
   if(jobs.length) await Promise.all(jobs);
   if(shurkinaFixed) await addLog('Шуркина: статус обновлён — иск на подписи (по данным индекса от 20.07.2026).');
+}
+
+// Разовая проверка смысловой согласованности статусов.
+// Исправляет старую ошибку, когда Шуркина с примечанием «Иск на подписи»
+// была ошибочно отнесена к уже направленным в суд. Флаг хранится отдельно
+// в meta/migrations, поэтому пользовательские изменения после миграции
+// повторно не перезаписываются.
+async function migrateStatusConsistencyV1(){
+  const migrationRef = doc(db, 'meta', 'migrations');
+  const migrationSnap = await getDoc(migrationRef);
+  if(migrationSnap.exists() && migrationSnap.data().statusConsistencyV1) return;
+
+  const snap = await getDocs(collection(db, 'cases'));
+  const shurkinaDoc = snap.docs.find(d => d.data().account === '130000154');
+  const batch = writeBatch(db);
+  const items = [];
+
+  if(shurkinaDoc){
+    const before = shurkinaDoc.data();
+    const noteSaysSigning = /(?:иск\s+)?на\s+подпис/i.test(before.note || '');
+    if(before.statusKey === 'sent_court' && noteSaysSigning){
+      const after = { ...before, statusKey:'signing' };
+      batch.update(doc(db, 'cases', shurkinaDoc.id), { statusKey:'signing' });
+      items.push({
+        collection:'cases', docId:shurkinaDoc.id,
+        label:`Шуркина Лидия Леонидовна · л/с ${before.account}`,
+        before:recordData({ id:shurkinaDoc.id, ...before }),
+        after:recordData({ id:shurkinaDoc.id, ...after })
+      });
+    }
+  }
+
+  batch.set(migrationRef, { statusConsistencyV1:true, statusConsistencyV1At:Date.now() }, { merge:true });
+  if(items.length){
+    batch.set(doc(collection(db, 'logs')), operationLogPayload({
+      text:'Исправлена классификация статуса Шуркиной: «Направлено в суд» → «Иск на подписи».',
+      action:'system.migration', items, meta:{ migration:'statusConsistencyV1' }
+    }));
+  }
+  await batch.commit();
 }
 
 function listenCases(){
@@ -401,6 +443,7 @@ function renderGroups(){
 const SUMMARY_CHIP_DEFS = [
   { key:'sent_court',  label:'Готово/направлено' },
   { key:'sent_debtor', label:'Отправка' },
+  { key:'signing',     label:'На подписи' },
   { key:'draft',       label:'Черновик' },
   { key:'waiting_doc', label:'Ожидание' },
   { key:'problem',     label:'Проблема' },
@@ -553,7 +596,8 @@ function logActionLabel(action){
   return ({
     'case.update':'Изменение дела', 'case.create':'Добавление должника', 'case.delete':'Удаление должника',
     'court.update':'Изменение судопроизводства', 'court.create':'Добавление в судопроизводство', 'court.delete':'Удаление из судопроизводства',
-    'import':'Массовый импорт', 'backup.restore':'Восстановление копии', 'undo':'Отмена операции', 'note':'Заметка'
+    'import':'Массовый импорт', 'backup.restore':'Восстановление копии', 'undo':'Отмена операции',
+    'system.migration':'Системная сверка данных', 'note':'Заметка'
   })[action] || 'Изменение';
 }
 
@@ -1125,7 +1169,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
    ИМПОРТ (только для администратора) — блок из чата «Учёт статусов»
 --------------------------------------------------------------------------- */
 const CATEGORY_MAP = {
-  'готово':'sent_court', 'отправка':'sent_debtor', 'ожидание':'waiting_doc',
+  'готово':'sent_court', 'отправка':'sent_debtor', 'подписание':'signing', 'на_подписи':'signing', 'ожидание':'waiting_doc',
   'приостановлено':'postponed', 'проблема':'problem',
   'не_требуется':'disconnected', 'не требуется':'disconnected'
 };
