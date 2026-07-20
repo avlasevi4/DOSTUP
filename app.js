@@ -1090,17 +1090,8 @@ document.querySelectorAll('.tab-panel.active').forEach(p => {
 });
 
 /* ---------------------------------------------------------------------------
-   ЗАМЕТКА / ЭКСПОРТ
+   ЭКСПОРТ
 --------------------------------------------------------------------------- */
-document.getElementById('add-note-btn').addEventListener('click', async e => {
-  const text = prompt('Текст заметки для журнала:')?.trim();
-  if(!text) return;
-  await performAction(e.currentTarget, 'Сохранение…', async () => {
-    await addLog(text);
-    showToast('Заметка добавлена.', 'success');
-  });
-});
-
 document.getElementById('export-btn').addEventListener('click', () => {
   let md = `# Статус по проекту исков — ${formatRuDate(todayLocalIso())}\n\n`;
   GROUP_ORDER.forEach(gid => {

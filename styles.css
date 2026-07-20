@@ -171,6 +171,23 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .case-fee{ font-size:12px; white-space:nowrap; }
 .case-edit-icon{ color:var(--ink-soft); font-size:16px; text-align:center; transition:color .12s var(--ease); }
 
+/* На десктопе все строки используют одинаковые колонки: статусы,
+   примечания, госпошлина и значок редактирования стоят по единым вертикалям. */
+@media (min-width: 721px){
+  .case-row{
+    grid-template-columns:36px minmax(260px,1fr) 330px 112px 32px;
+  }
+  .case-status{
+    width:330px;
+    max-width:330px;
+    justify-self:start;
+  }
+  .case-fee{
+    width:112px;
+    justify-self:start;
+  }
+}
+
 .badge{
   display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px;
   font-size:11.5px; font-weight:600; white-space:nowrap;
