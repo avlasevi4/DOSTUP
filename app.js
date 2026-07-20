@@ -482,13 +482,22 @@ function pluralDela(n){
 --------------------------------------------------------------------------- */
 const DOT = { blue:'🔵', done:'✅', denied:'❌', partial:'🟠' };
 
-function nearestHearingOf(c){
+function nearestUpcomingHearingOf(c){
   const now = new Date();
-  const upcoming = (c.hearings||[]).filter(h => h.date && new Date(h.date) >= now)
-    .sort((a,b) => new Date(a.date) - new Date(b.date));
-  if(upcoming.length) return upcoming[0];
-  const past = (c.hearings||[]).filter(h => h.date).sort((a,b) => new Date(b.date) - new Date(a.date));
-  return past[0] || null;
+  return (c.hearings||[])
+    .filter(h => h.date && new Date(h.date) >= now)
+    .sort((a,b) => new Date(a.date) - new Date(b.date))[0] || null;
+}
+
+function upcomingCourtHearings(limit = 3){
+  return COURT
+    .map(c => {
+      const hearing = nearestUpcomingHearingOf(c);
+      return hearing ? { caseData:c, hearing, dt:new Date(hearing.date) } : null;
+    })
+    .filter(Boolean)
+    .sort((a,b) => a.dt - b.dt || (a.caseData.name||'').localeCompare(b.caseData.name||'', 'ru'))
+    .slice(0, limit);
 }
 
 function renderCourt(){
@@ -504,16 +513,21 @@ function renderCourt(){
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `Открыть судебное дело: ${c.name}`);
-    const nh = nearestHearingOf(c);
+    const nh = nearestUpcomingHearingOf(c);
     const hearingText = nh ? formatRuDateTime(nh.date) : 'не назначено';
+    const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
       <div>
         <div class="court-name">${escapeHtml(c.name)}</div>
         <div class="court-meta">${escapeHtml(c.court || '—')}${c.caseNumber ? ' · дело №'+escapeHtml(c.caseNumber) : ''}${c.filedDate ? ' · подан '+formatRuDate(c.filedDate) : ''}</div>
-        ${c.notes ? `<div class="court-meta" style="margin-top:6px">${escapeHtml(c.notes)}</div>` : ''}
+        ${c.notes ? `<div class="court-card-note"><b>Примечание:</b> ${escapeHtml(c.notes)}</div>` : '<div class="court-card-note is-empty"><b>Примечание:</b> не указано</div>'}
       </div>
-      <div class="court-hearing"><b>${hearingText}</b>${c.judge ? '<br>Судья: '+escapeHtml(c.judge) : ''}</div>
+      <div class="court-hearing">
+        <b>${hearingText}</b>
+        ${nh ? `<div class="court-preparation"><span>Подготовить:</span> ${escapeHtml(preparation || 'не указано')}</div>` : ''}
+        ${c.judge ? `<div class="court-judge">Судья: ${escapeHtml(c.judge)}</div>` : ''}
+      </div>
     `;
     card.addEventListener('click', () => openCourtModal(c));
     card.addEventListener('keydown', e => {
@@ -527,14 +541,7 @@ function renderCourtSummary(){
   const el = document.getElementById('court-summary-strip');
   if(!el) return;
   const now = new Date();
-  let nearest = null;
-  COURT.forEach(c => {
-    (c.hearings||[]).forEach(h => {
-      if(!h.date) return;
-      const dt = new Date(h.date);
-      if(dt >= now && (!nearest || dt < nearest.dt)) nearest = { dt, name:c.name, id:c.id, dateStr:h.date };
-    });
-  });
+  const nearest = upcomingCourtHearings(3);
   const weekAhead = new Date(now.getTime() + 7*24*3600*1000);
   let weekCount = 0;
   COURT.forEach(c => (c.hearings||[]).forEach(h => {
@@ -542,9 +549,33 @@ function renderCourtSummary(){
     const dt = new Date(h.date);
     if(dt >= now && dt <= weekAhead) weekCount++;
   }));
-  const chips = [];
-  chips.push(nearest
-    ? `<div class="summary-chip chip-link" onclick="window.openCourtCardById('${nearest.id}')">⏰ Ближайшее: <b>${formatRuDateTime(nearest.dateStr)}</b> — ${escapeHtml(nearest.name)}</div>`
+
+  const upcomingHtml = nearest.length
+    ? `<section class="upcoming-summary" aria-label="Ближайшие заседания">
+        <div class="upcoming-summary-head">
+          <b>⏰ Ближайшие заседания</b>
+          <span>до трёх дел</span>
+        </div>
+        <div class="upcoming-summary-list">
+          ${nearest.map(({caseData, hearing}) => `
+            <button type="button" class="upcoming-summary-row" onclick="window.openCourtCardById('${caseData.id}')">
+              <span class="upcoming-summary-date">${formatRuDateTime(hearing.date)}</span>
+              <span class="upcoming-summary-case">${escapeHtml(caseData.name)}</span>
+              <span class="upcoming-summary-note"><b>Подготовить:</b> ${escapeHtml((hearing.note||'').trim() || 'не указано')}</span>
+            </button>
+          `).join('')}
+        </div>
+      </section>`
+    : `<section class="upcoming-summary upcoming-summary-empty">
+        <div class="upcoming-summary-head"><b>⏰ Ближайшие заседания</b></div>
+        <p>Нет назначенных заседаний.</p>
+      </section>`;
+
+  el.innerHTML = upcomingHtml
+    + `<div class="summary-chip">⚖️ Всего в производстве: <b>${COURT.length}</b></div>`
+    + `<div class="summary-chip">📅 Заседаний за 7 дней: <b>${weekCount}</b></div>`;
+}
+window.openCourtCardById('${nearest.id}')">⏰ Ближайшее: <b>${formatRuDateTime(nearest.dateStr)}</b> — ${escapeHtml(nearest.name)}</div>`
     : `<div class="summary-chip">⏰ Ближайшее заседание: <b>нет назначенных</b></div>`);
   chips.push(`<div class="summary-chip">⚖️ Всего в производстве: <b>${COURT.length}</b></div>`);
   chips.push(`<div class="summary-chip">📅 Заседаний за 7 дней: <b>${weekCount}</b></div>`);
@@ -888,6 +919,30 @@ function renderHearingsList(){
   });
 }
 
+function addPendingHearingFromInputs(){
+  const dateInput = document.getElementById('f-newHearingDate');
+  const noteInput = document.getElementById('f-newHearingNote');
+  if(!dateInput || !noteInput) return 'empty';
+
+  const dateValue = dateInput.value;
+  const noteValue = noteInput.value.trim();
+  if(!dateValue && !noteValue) return 'empty';
+  if(!dateValue){
+    markInvalid('f-newHearingDate', 'Укажите дату заседания.');
+    return 'invalid';
+  }
+  if(modalHearings.some(h => h.date === dateValue)){
+    markInvalid('f-newHearingDate', 'Заседание на эту дату и время уже добавлено.');
+    return 'invalid';
+  }
+
+  modalHearings.push({ date:dateValue, note:noteValue });
+  dateInput.value = '';
+  noteInput.value = '';
+  renderHearingsList();
+  return 'added';
+}
+
 function openCourtModal(c){
   activeRecord = { kind:'court', data:c };
   modalHearings = JSON.parse(JSON.stringify(c.hearings || (c.hearingDate ? [{date:c.hearingDate, note:''}] : [])));
@@ -948,17 +1003,7 @@ function openCourtModal(c){
   renderHearingsList();
 
   document.getElementById('btn-add-hearing').addEventListener('click', () => {
-    const dv = document.getElementById('f-newHearingDate').value;
-    const nv = document.getElementById('f-newHearingNote').value;
-    if(!dv){ markInvalid('f-newHearingDate', 'Укажите дату заседания.'); return; }
-    if(modalHearings.some(h => h.date === dv)){
-      markInvalid('f-newHearingDate', 'Заседание на эту дату и время уже добавлено.');
-      return;
-    }
-    modalHearings.push({ date: dv, note: nv.trim() });
-    document.getElementById('f-newHearingDate').value = '';
-    document.getElementById('f-newHearingNote').value = '';
-    renderHearingsList();
+    addPendingHearingFromInputs();
   });
 
   const courtSelect = document.getElementById('f-court-select');
@@ -1057,6 +1102,12 @@ document.getElementById('modal-save').addEventListener('click', async () => {
         showToast('Этот должник уже есть в судебном производстве.', 'error');
         throw new ValidationError();
       }
+
+      // Если пользователь заполнил новую дату/подготовку, но не нажал
+      // отдельную кнопку «Добавить заседание», общая кнопка «Сохранить»
+      // всё равно добавляет заседание в карточку.
+      const pendingHearingResult = addPendingHearingFromInputs();
+      if(pendingHearingResult === 'invalid') throw new ValidationError();
 
       const updated = {
         name, account,
