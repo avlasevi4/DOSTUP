@@ -575,12 +575,6 @@ function renderCourtSummary(){
     + `<div class="summary-chip">⚖️ Всего в производстве: <b>${COURT.length}</b></div>`
     + `<div class="summary-chip">📅 Заседаний за 7 дней: <b>${weekCount}</b></div>`;
 }
-window.openCourtCardById('${nearest.id}')">⏰ Ближайшее: <b>${formatRuDateTime(nearest.dateStr)}</b> — ${escapeHtml(nearest.name)}</div>`
-    : `<div class="summary-chip">⏰ Ближайшее заседание: <b>нет назначенных</b></div>`);
-  chips.push(`<div class="summary-chip">⚖️ Всего в производстве: <b>${COURT.length}</b></div>`);
-  chips.push(`<div class="summary-chip">📅 Заседаний за 7 дней: <b>${weekCount}</b></div>`);
-  el.innerHTML = chips.join('');
-}
 window.openCourtCardById = function(id){
   const c = COURT.find(x => x.id === id);
   if(c) openCourtModal(c);
