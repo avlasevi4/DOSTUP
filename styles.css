@@ -77,21 +77,13 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .gate-error{ color:var(--stamp-red); font-size:13px; margin-top:10px; }
 
 /* ==========================================================================
-   ШАПКА / "ШТАМП"
+   ШАПКА
    ========================================================================== */
 .masthead{ background:var(--ink); color:var(--paper-lift); }
 .masthead-inner{
   max-width:1100px; margin:0 auto; padding:32px 28px;
   display:flex; align-items:center; gap:28px;
 }
-.stamp{
-  width:120px; height:120px; flex:none; display:flex; align-items:center; justify-content:center;
-}
-.stamp-image{
-  width:120px; height:120px; display:block; object-fit:contain;
-  filter: drop-shadow(0 8px 22px rgba(0,0,0,.18));
-}
-
 .masthead-text{ flex:1; min-width:0; }
 .eyebrow{ font-family:var(--font-mono); font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#8FA3BD; margin:0 0 6px; }
 .masthead-text h1{ color:#fff; font-size:30px; }
@@ -287,8 +279,6 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
    ========================================================================== */
 @media (max-width: 720px){
   .masthead-inner{ flex-wrap:wrap; padding:24px 18px; gap:16px; }
-  .stamp{ width:72px; height:72px; }
-  .stamp-image{ width:72px; height:72px; }
   .masthead-text h1{ font-size:22px; }
   .masthead-actions{ width:100%; justify-content:flex-start; }
   .masthead-actions .btn-ghost{ padding:8px 12px; font-size:12px; }

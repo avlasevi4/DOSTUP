@@ -28,7 +28,7 @@ const STATUS_DEFS = {
   sent_court:   { label:'Направлено в суд',                         icon:'✅', badge:'done',     group:'A' },
   sent_debtor:  { label:'Направлено ответчику, ждём реестр',        icon:'📮', badge:'progress', group:'A' },
   draft:        { label:'Черновик готовится',                      icon:'🟡', badge:'wait',     group:'B' },
-  waiting_doc:  { label:'Ждём документ (третьи лица)',              icon:'⏸', badge:'wait',     group:'B' },
+  waiting_doc:  { label:'Ожидаем документы',              icon:'⏸', badge:'wait',     group:'B' },
   problem:      { label:'Проблема — требует решения',               icon:'🔴', badge:'problem',  group:'B' },
   postponed:    { label:'Отложено — долг ещё не просужен',          icon:'⏳', badge:'wait',     group:'V' },
   disconnected: { label:'Отключено',                                icon:'⚪', badge:'none',     group:'G' },
