@@ -339,3 +339,32 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 }
 
 :focus-visible{ outline:2px solid var(--stamp-blue); outline-offset:2px; }
+
+/* ========================================================================== 
+   ТЕХНИЧЕСКИЕ СОСТОЯНИЯ / УВЕДОМЛЕНИЯ
+   ========================================================================== */
+button:disabled{ cursor:wait; opacity:.65; }
+.field input.is-invalid, .field select.is-invalid, .field textarea.is-invalid{
+  border-color:var(--stamp-red); box-shadow:0 0 0 2px rgba(155,50,38,.12);
+}
+.conn-status.connecting{ color:var(--seal-gold); }
+
+.toast-region{
+  position:fixed; right:20px; bottom:20px; z-index:400;
+  display:flex; flex-direction:column; gap:8px; width:min(360px, calc(100vw - 32px));
+  pointer-events:none;
+}
+.toast{
+  background:var(--ink); color:#fff; border-left:4px solid var(--stamp-blue);
+  padding:12px 14px; border-radius:var(--radius); box-shadow:0 12px 34px rgba(0,0,0,.25);
+  font-size:13.5px; line-height:1.4; opacity:0; transform:translateY(8px);
+  transition:opacity .18s var(--ease), transform .18s var(--ease);
+}
+.toast.show{ opacity:1; transform:none; }
+.toast-success{ border-left-color:#7FAA86; }
+.toast-error{ border-left-color:#D26A5D; }
+.toast-info{ border-left-color:#D2AE55; }
+
+@media (max-width:720px){
+  .toast-region{ right:16px; bottom:16px; }
+}

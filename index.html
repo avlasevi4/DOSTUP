@@ -89,15 +89,15 @@
   </main>
 
   <footer class="foot">
-    <span id="conn-status" class="conn-status">● подключено</span>
+    <span id="conn-status" class="conn-status connecting">● подключение…</span>
     <span class="foot-sep">·</span>
     <span>Правки сохраняются автоматически</span>
   </footer>
 </div>
 
 <!-- ===== МОДАЛЬНОЕ ОКНО: РЕДАКТИРОВАНИЕ ДЕЛА / СУДОПРОИЗВОДСТВА ===== -->
-<div id="modal-backdrop" class="modal-backdrop">
-  <div class="modal">
+<div id="modal-backdrop" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-head">
       <h3 id="modal-title">Карточка дела</h3>
       <button id="modal-close" class="modal-close" aria-label="Закрыть">×</button>
@@ -114,10 +114,10 @@
 </div>
 
 <!-- ===== МОДАЛЬНОЕ ОКНО: ИМПОРТ (только администратор) ===== -->
-<div id="import-backdrop" class="modal-backdrop">
-  <div class="modal">
+<div id="import-backdrop" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
     <div class="modal-head">
-      <h3>Импорт из чата «Учёт статусов»</h3>
+      <h3 id="import-title">Импорт из чата «Учёт статусов»</h3>
       <button id="import-close" class="modal-close" aria-label="Закрыть">×</button>
     </div>
     <div class="modal-body">
@@ -137,6 +137,8 @@
     </div>
   </div>
 </div>
+
+<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 
 <script type="module" src="firebase-config.js"></script>
 <script type="module" src="seed-data.js"></script>

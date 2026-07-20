@@ -4,7 +4,7 @@ import { SEED_CASES, SEED_COURT_CASES, SEED_LOG } from './seed-data.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import {
   getFirestore, collection, doc, getDocs, addDoc, updateDoc,
-  deleteDoc, onSnapshot, writeBatch
+  onSnapshot, writeBatch, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 /* ---------------------------------------------------------------------------
@@ -16,6 +16,9 @@ let COURT = [];
 let LOGS = [];
 let modalHearings = [];   // временный список заседаний, пока открыта карточка судопроизводства
 let importDiffs = [];     // изменения, посчитанные при предпросмотре импорта
+let bootStarted = false;
+let lastFocusedElement = null;
+const listenerReady = { cases:false, court:false, logs:false };
 
 /* ---------------------------------------------------------------------------
    ФИКСИРОВАННЫЕ СТАТУСЫ (значок и группа подставляются автоматически)
@@ -77,30 +80,37 @@ if(sessionStorage.getItem('gmi-unlocked') === '1'){
   boot();
 }
 
-function boot(){
+async function boot(){
+  if(bootStarted) return;
+  bootStarted = true;
+
   if(firebaseConfig.apiKey === 'ВСТАВЬТЕ_СЮДА'){
     document.getElementById('groups').innerHTML =
       `<div style="padding:40px;text-align:center;color:var(--stamp-red)">
          Firebase не настроен. Откройте <code>firebase-config.js</code> и вставьте
          данные вашего проекта — инструкция в README.md.
        </div>`;
+    setConnectionStatus('offline', '● Firebase не настроен');
     return;
   }
 
-  const fbApp = initializeApp(firebaseConfig);
-  db = getFirestore(fbApp);
+  setConnectionStatus('connecting', '● подключение…');
+  try{
+    const fbApp = initializeApp(firebaseConfig);
+    db = getFirestore(fbApp);
 
-  seedIfEmpty()
-    .then(migrateLegacyCases)
-    .then(migrateLegacyCourt)
-    .then(fixLegacyNotesOnce)
-    .then(() => {
-      listenCases();
-      listenCourt();
-      listenLogs();
-    });
+    await seedIfEmpty();
+    await migrateLegacyCases();
+    await migrateLegacyCourt();
+    await fixLegacyNotesOnce();
 
-  document.getElementById('conn-status').textContent = '● подключено';
+    listenCases();
+    listenCourt();
+    listenLogs();
+  }catch(err){
+    setConnectionStatus('offline', '● ошибка подключения');
+    reportError('Не удалось запустить приложение', err);
+  }
 }
 
 async function seedIfEmpty(){
@@ -216,11 +226,8 @@ function listenCases(){
     renderGroups();
     renderSummary();
     document.getElementById('stamp-total').textContent = CASES.length || 18;
-  }, err => {
-    document.getElementById('conn-status').textContent = '● офлайн / ошибка подключения';
-    document.getElementById('conn-status').classList.add('offline');
-    console.error(err);
-  });
+    markListenerReady('cases');
+  }, err => handleListenerError('реестра дел', err));
 }
 function listenCourt(){
   onSnapshot(collection(db, 'courtCases'), snap => {
@@ -228,19 +235,48 @@ function listenCourt(){
     renderCourt();
     renderCourtSummary();
     renderSummary();
-  });
+    markListenerReady('court');
+  }, err => handleListenerError('судебного производства', err));
 }
 function listenLogs(){
   onSnapshot(collection(db, 'logs'), snap => {
     LOGS = snap.docs.map(d => ({ id:d.id, ...d.data() }))
-      .sort((a,b) => (b.date||'').localeCompare(a.date||''));
+      .sort((a,b) => (b.date||'').localeCompare(a.date||'') || (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
     renderLog();
     if(LOGS[0]) document.getElementById('last-updated').textContent = 'обновлено ' + formatRuDate(LOGS[0].date);
-  });
+    markListenerReady('logs');
+  }, err => handleListenerError('журнала изменений', err));
+}
+
+function markListenerReady(name){
+  listenerReady[name] = true;
+  if(navigator.onLine && Object.values(listenerReady).every(Boolean)){
+    setConnectionStatus('online', '● подключено');
+  }
+}
+
+function handleListenerError(section, err){
+  setConnectionStatus('offline', '● офлайн / ошибка подключения');
+  reportError(`Ошибка загрузки ${section}`, err, false);
+}
+
+function logPayload(text){
+  return { date: todayLocalIso(), createdAt:Date.now(), text };
+}
+
+function addLogToBatch(batch, text){
+  batch.set(doc(collection(db, 'logs')), logPayload(text));
 }
 
 async function addLog(text){
-  await addDoc(collection(db, 'logs'), { date: new Date().toISOString().slice(0,10), text });
+  await addDoc(collection(db, 'logs'), logPayload(text));
+}
+
+async function commitWithLog(mutator, logText){
+  const batch = writeBatch(db);
+  mutator(batch);
+  addLogToBatch(batch, logText);
+  await batch.commit();
 }
 
 /* ---------------------------------------------------------------------------
@@ -264,6 +300,9 @@ function renderGroups(){
       const def = STATUS_DEFS[c.statusKey] || STATUS_DEFS.draft;
       const row = document.createElement('div');
       row.className = 'case-row';
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', `Открыть карточку: ${c.name}`);
       row.innerHTML = `
         <div class="case-num">${String(c.num).padStart(2,'0')}</div>
         <div>
@@ -278,6 +317,9 @@ function renderGroups(){
         <div class="case-edit-icon">✎</div>
       `;
       row.addEventListener('click', () => openCaseModal(c));
+      row.addEventListener('keydown', e => {
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openCaseModal(c); }
+      });
       group.appendChild(row);
     });
     el.appendChild(group);
@@ -340,6 +382,9 @@ function renderCourt(){
   COURT.forEach(c => {
     const card = document.createElement('div');
     card.className = 'court-card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Открыть судебное дело: ${c.name}`);
     const nh = nearestHearingOf(c);
     const hearingText = nh ? formatRuDateTime(nh.date) : 'не назначено';
     card.innerHTML = `
@@ -352,6 +397,9 @@ function renderCourt(){
       <div class="court-hearing"><b>${hearingText}</b>${c.judge ? '<br>Судья: '+escapeHtml(c.judge) : ''}</div>
     `;
     card.addEventListener('click', () => openCourtModal(c));
+    card.addEventListener('keydown', e => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openCourtModal(c); }
+    });
     el.appendChild(card);
   });
 }
@@ -408,10 +456,33 @@ const modalDelete = document.getElementById('modal-delete');
 
 let activeRecord = null;   // {kind:'case'|'newcase'|'court', data:{...}}
 
-function closeModal(){ backdrop.classList.remove('open'); activeRecord = null; modalHearings = []; }
+function openBackdrop(el, focusSelector){
+  lastFocusedElement = document.activeElement;
+  el.classList.add('open');
+  el.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => {
+    const target = focusSelector ? el.querySelector(focusSelector) : null;
+    (target || el.querySelector('input, select, textarea, button'))?.focus();
+  });
+}
+
+function closeBackdrop(el){
+  el.classList.remove('open');
+  el.setAttribute('aria-hidden', 'true');
+  if(lastFocusedElement && document.contains(lastFocusedElement)) lastFocusedElement.focus();
+  lastFocusedElement = null;
+}
+
+function closeModal(){
+  closeBackdrop(backdrop);
+  activeRecord = null;
+  modalHearings = [];
+}
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
 backdrop.addEventListener('click', e => { if(e.target === backdrop) closeModal(); });
+modalBody.addEventListener('input', e => e.target.classList.remove('is-invalid'));
+modalBody.addEventListener('change', e => e.target.classList.remove('is-invalid'));
 
 function statusOptionsHtml(selected){
   return STATUS_ORDER.map(k => `<option value="${k}" ${k===selected?'selected':''}>${STATUS_DEFS[k].icon} ${STATUS_DEFS[k].label}</option>`).join('');
@@ -436,7 +507,7 @@ function openCaseModal(c){
       </select>
     </div>
   `;
-  backdrop.classList.add('open');
+  openBackdrop(backdrop, '#f-statusKey');
 }
 
 function openNewCaseModal(){
@@ -455,7 +526,7 @@ function openNewCaseModal(){
       <select id="f-feeKey"><option value="unpaid" selected>Не оплачена</option><option value="paid">Оплачена</option></select>
     </div>
   `;
-  backdrop.classList.add('open');
+  openBackdrop(backdrop, '#f-name');
 }
 document.getElementById('add-case-btn').addEventListener('click', openNewCaseModal);
 
@@ -492,11 +563,14 @@ function openCourtModal(c){
   const knownCourts = [...new Set(COURT.map(x => x.court).filter(Boolean))].sort();
   const currentCourtVal = c.court && knownCourts.includes(c.court) ? c.court : (c.court ? '__other__' : '');
 
+  const availableCases = CASES
+    .filter(cc => !COURT.some(existing => normalizeAccount(existing.account) === normalizeAccount(cc.account)))
+    .sort((a,b)=>a.num-b.num);
   const debtorField = isNew
-    ? `<div class="field"><label>Должник</label><select id="f-caseSelect">
-        ${CASES.slice().sort((a,b)=>a.num-b.num).map(cc =>
+    ? `<div class="field"><label>Должник</label><select id="f-caseSelect" ${availableCases.length ? '' : 'disabled'}>
+        ${availableCases.length ? availableCases.map(cc =>
           `<option value="${escapeHtml(cc.account)}" data-name="${escapeHtml(cc.name)}">${String(cc.num).padStart(2,'0')}. ${escapeHtml(cc.name)}</option>`
-        ).join('')}
+        ).join('') : '<option value="">Все должники уже добавлены в судебное производство</option>'}
       </select></div>`
     : `<div class="field"><label>Должник</label><div class="readonly-text">${escapeHtml(c.name)} (л/с ${escapeHtml(c.account||'—')})</div></div>`;
 
@@ -541,8 +615,12 @@ function openCourtModal(c){
   document.getElementById('btn-add-hearing').addEventListener('click', () => {
     const dv = document.getElementById('f-newHearingDate').value;
     const nv = document.getElementById('f-newHearingNote').value;
-    if(!dv){ alert('Укажите дату заседания'); return; }
-    modalHearings.push({ date: dv, note: nv });
+    if(!dv){ markInvalid('f-newHearingDate', 'Укажите дату заседания.'); return; }
+    if(modalHearings.some(h => h.date === dv)){
+      markInvalid('f-newHearingDate', 'Заседание на эту дату и время уже добавлено.');
+      return;
+    }
+    modalHearings.push({ date: dv, note: nv.trim() });
     document.getElementById('f-newHearingDate').value = '';
     document.getElementById('f-newHearingNote').value = '';
     renderHearingsList();
@@ -553,70 +631,123 @@ function openCourtModal(c){
     document.getElementById('f-court-other').style.display = courtSelect.value === '__other__' ? 'block' : 'none';
   });
 
-  backdrop.classList.add('open');
+  openBackdrop(backdrop, isNew ? '#f-caseSelect' : '#f-court-select');
 }
-document.getElementById('add-court-btn').addEventListener('click', () => openCourtModal({}));
+document.getElementById('add-court-btn').addEventListener('click', () => {
+  const available = CASES.some(cc => !COURT.some(c => normalizeAccount(c.account) === normalizeAccount(cc.account)));
+  if(!available){ showToast('Все должники уже добавлены в судебное производство.', 'info'); return; }
+  openCourtModal({});
+});
 
 document.getElementById('modal-save').addEventListener('click', async () => {
   if(!activeRecord) return;
+  const saveBtn = document.getElementById('modal-save');
 
-  if(activeRecord.kind === 'case'){
-    const c = activeRecord.data;
-    const statusKey = val('f-statusKey');
-    await updateDoc(doc(db, 'cases', c.id), { statusKey, note: val('f-note'), feeKey: val('f-feeKey') });
-    await addLog(`${c.name}: статус обновлён — «${STATUS_DEFS[statusKey].label}».`);
+  await performAction(saveBtn, 'Сохранение…', async () => {
+    if(activeRecord.kind === 'case'){
+      const c = activeRecord.data;
+      const statusKey = val('f-statusKey');
+      const patch = { statusKey, note: val('f-note').trim(), feeKey: val('f-feeKey') };
+      const unchanged = patch.statusKey === c.statusKey && patch.note === (c.note||'') && patch.feeKey === c.feeKey;
+      if(unchanged){ showToast('Изменений нет.', 'info'); closeModal(); return; }
+      await commitWithLog(
+        batch => batch.update(doc(db, 'cases', c.id), patch),
+        `${c.name}: карточка обновлена — «${STATUS_DEFS[statusKey].label}».`
+      );
 
-  } else if(activeRecord.kind === 'newcase'){
-    const name = val('f-name').trim();
-    const account = val('f-account').trim();
-    if(!name || !account){ alert('Укажите ФИО и лицевой счёт.'); return; }
-    const num = CASES.reduce((max, c) => Math.max(max, c.num||0), 0) + 1;
-    await addDoc(collection(db, 'cases'), {
-      num, name, account, address: val('f-address').trim(),
-      statusKey: val('f-statusKey'), note: val('f-note'), feeKey: val('f-feeKey'), protected: false
-    });
-    await addLog(`${name}: добавлен новый должник в реестр (№${num}).`);
+    } else if(activeRecord.kind === 'newcase'){
+      const name = val('f-name').trim();
+      const account = normalizeAccount(val('f-account'));
+      if(!name){ markInvalid('f-name', 'Укажите ФИО.'); throw new ValidationError(); }
+      if(!account){ markInvalid('f-account', 'Укажите лицевой счёт.'); throw new ValidationError(); }
+      if(!/^\d+$/.test(account)){ markInvalid('f-account', 'Лицевой счёт должен содержать только цифры.'); throw new ValidationError(); }
+      if(CASES.some(c => normalizeAccount(c.account) === account)){
+        markInvalid('f-account', 'Должник с таким лицевым счётом уже есть в реестре.');
+        throw new ValidationError();
+      }
 
-  } else {
-    const c = activeRecord.data;
-    const isNew = !c.id;
-    const courtSelectVal = val('f-court-select');
-    const finalCourt = courtSelectVal === '__other__' ? val('f-court-other') : courtSelectVal;
-    let name = c.name, account = c.account;
-    if(isNew){
-      const sel = document.getElementById('f-caseSelect');
-      account = sel.value;
-      name = sel.selectedOptions[0] ? sel.selectedOptions[0].dataset.name : '';
-    }
-    const updated = {
-      name, account,
-      court: finalCourt, caseNumber: val('f-caseNumber'),
-      filedDate: val('f-filedDate'), judge: val('f-judge'),
-      dot: val('f-dot'), notes: val('f-notes'),
-      hearings: modalHearings.slice().sort((a,b) => new Date(a.date) - new Date(b.date))
-    };
-    if(!isNew){
-      await updateDoc(doc(db, 'courtCases', c.id), updated);
-      await addLog(`${updated.name}: обновлена карточка судебного производства.`);
+      let createdNum = null;
+      const caseRef = doc(collection(db, 'cases'));
+      const logRef = doc(collection(db, 'logs'));
+      const counterRef = doc(db, 'meta', 'counters');
+      const localNext = CASES.reduce((max, c) => Math.max(max, Number(c.num)||0), 0) + 1;
+      const payload = {
+        name, account, address: val('f-address').trim(),
+        statusKey: val('f-statusKey'), note: val('f-note').trim(),
+        feeKey: val('f-feeKey'), protected: false
+      };
+
+      await runTransaction(db, async transaction => {
+        const counterSnap = await transaction.get(counterRef);
+        const storedNext = counterSnap.exists() ? Number(counterSnap.data().nextCaseNum) || localNext : localNext;
+        createdNum = Math.max(storedNext, localNext);
+        transaction.set(counterRef, { nextCaseNum: createdNum + 1 }, { merge:true });
+        transaction.set(caseRef, { num:createdNum, ...payload });
+        transaction.set(logRef, logPayload(`${name}: добавлен новый должник в реестр (№${createdNum}).`));
+      });
+
     } else {
-      await addDoc(collection(db, 'courtCases'), updated);
-      await addLog(`${updated.name}: заведено дело в судебном производстве (${updated.court || 'суд не указан'}).`);
+      const c = activeRecord.data;
+      const isNew = !c.id;
+      const courtSelectVal = val('f-court-select');
+      const finalCourt = (courtSelectVal === '__other__' ? val('f-court-other') : courtSelectVal).trim();
+      let name = c.name, account = normalizeAccount(c.account);
+      if(isNew){
+        const sel = document.getElementById('f-caseSelect');
+        account = normalizeAccount(sel.value);
+        name = sel.selectedOptions[0] ? sel.selectedOptions[0].dataset.name : '';
+      }
+      if(!account || !name){ markInvalid('f-caseSelect', 'Выберите должника.'); throw new ValidationError(); }
+      if(!finalCourt){
+        markInvalid(courtSelectVal === '__other__' ? 'f-court-other' : 'f-court-select', 'Укажите суд.');
+        throw new ValidationError();
+      }
+      if(!val('f-filedDate')){ markInvalid('f-filedDate', 'Укажите дату подачи иска.'); throw new ValidationError(); }
+      if(isNew && COURT.some(item => normalizeAccount(item.account) === account)){
+        showToast('Этот должник уже есть в судебном производстве.', 'error');
+        throw new ValidationError();
+      }
+
+      const updated = {
+        name, account,
+        court: finalCourt, caseNumber: val('f-caseNumber').trim(),
+        filedDate: val('f-filedDate'), judge: val('f-judge').trim(),
+        dot: val('f-dot'), notes: val('f-notes').trim(),
+        hearings: modalHearings.slice().sort((a,b) => new Date(a.date) - new Date(b.date))
+      };
+      const courtRef = isNew ? doc(collection(db, 'courtCases')) : doc(db, 'courtCases', c.id);
+      await commitWithLog(
+        batch => isNew ? batch.set(courtRef, updated) : batch.update(courtRef, updated),
+        isNew
+          ? `${updated.name}: заведено дело в судебном производстве (${updated.court}).`
+          : `${updated.name}: обновлена карточка судебного производства.`
+      );
     }
-  }
-  closeModal();
+    closeModal();
+    showToast('Изменения сохранены.', 'success');
+  });
 });
 
 modalDelete.addEventListener('click', async () => {
   if(!activeRecord || !activeRecord.data.id) return;
   if(activeRecord.kind === 'case' && activeRecord.data.protected) return;
+  if(activeRecord.kind === 'case' && COURT.some(c => normalizeAccount(c.account) === normalizeAccount(activeRecord.data.account))){
+    showToast('Сначала удалите связанное дело из судебного производства.', 'error');
+    return;
+  }
   if(!confirm('Удалить эту запись? Действие необратимо.')) return;
-  const coll = activeRecord.kind === 'case' ? 'cases' : 'courtCases';
-  await deleteDoc(doc(db, coll, activeRecord.data.id));
-  await addLog(`Запись «${activeRecord.data.name}» удалена.`);
-  closeModal();
-});
 
-function val(id){ return document.getElementById(id).value; }
+  await performAction(modalDelete, 'Удаление…', async () => {
+    const coll = activeRecord.kind === 'case' ? 'cases' : 'courtCases';
+    const record = activeRecord.data;
+    await commitWithLog(
+      batch => batch.delete(doc(db, coll, record.id)),
+      `Запись «${record.name}» удалена.`
+    );
+    closeModal();
+    showToast('Запись удалена.', 'success');
+  });
+});
 
 /* ---------------------------------------------------------------------------
    ВКЛАДКИ
@@ -647,13 +778,17 @@ document.querySelectorAll('.tab-panel.active').forEach(p => {
 /* ---------------------------------------------------------------------------
    ЗАМЕТКА / ЭКСПОРТ
 --------------------------------------------------------------------------- */
-document.getElementById('add-note-btn').addEventListener('click', async () => {
-  const text = prompt('Текст заметки для журнала:');
-  if(text) await addLog(text);
+document.getElementById('add-note-btn').addEventListener('click', async e => {
+  const text = prompt('Текст заметки для журнала:')?.trim();
+  if(!text) return;
+  await performAction(e.currentTarget, 'Сохранение…', async () => {
+    await addLog(text);
+    showToast('Заметка добавлена.', 'success');
+  });
 });
 
 document.getElementById('export-btn').addEventListener('click', () => {
-  let md = `# Статус по проекту исков — ${formatRuDate(new Date().toISOString().slice(0,10))}\n\n`;
+  let md = `# Статус по проекту исков — ${formatRuDate(todayLocalIso())}\n\n`;
   GROUP_ORDER.forEach(gid => {
     const cases = CASES.filter(c => (STATUS_DEFS[c.statusKey]||{}).group === gid).sort((a,b)=>a.num-b.num);
     if(!cases.length) return;
@@ -661,7 +796,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
     md += `| # | Должник | Л/с | Статус | Примечание | Госпошлина |\n|---|---|---|---|---|---|\n`;
     cases.forEach(c => {
       const def = STATUS_DEFS[c.statusKey] || STATUS_DEFS.draft;
-      md += `| ${c.num} | ${c.name} | ${c.account||''} | ${def.icon} ${def.label} | ${c.note||''} | ${c.feeKey==='paid'?'оплачена':'не оплачена'} |\n`;
+      md += `| ${c.num} | ${escapeMdCell(c.name)} | ${escapeMdCell(c.account||'')} | ${def.icon} ${escapeMdCell(def.label)} | ${escapeMdCell(c.note||'')} | ${c.feeKey==='paid'?'оплачена':'не оплачена'} |\n`;
     });
     md += `\n`;
   });
@@ -674,9 +809,11 @@ document.getElementById('export-btn').addEventListener('click', () => {
   }
   const blob = new Blob([md], { type:'text/markdown' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `статус-${new Date().toISOString().slice(0,10)}.md`;
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = `статус-${todayLocalIso()}.md`;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 });
 
 /* ---------------------------------------------------------------------------
@@ -711,9 +848,9 @@ document.getElementById('import-btn').addEventListener('click', () => {
   document.getElementById('import-preview').innerHTML = '';
   document.getElementById('import-apply-btn').hidden = true;
   importDiffs = [];
-  document.getElementById('import-backdrop').classList.add('open');
+  openBackdrop(document.getElementById('import-backdrop'), '#import-text');
 });
-function closeImport(){ document.getElementById('import-backdrop').classList.remove('open'); }
+function closeImport(){ closeBackdrop(document.getElementById('import-backdrop')); }
 document.getElementById('import-close').addEventListener('click', closeImport);
 document.getElementById('import-cancel').addEventListener('click', closeImport);
 document.getElementById('import-backdrop').addEventListener('click', e => {
@@ -723,17 +860,22 @@ document.getElementById('import-backdrop').addEventListener('click', e => {
 document.getElementById('import-preview-btn').addEventListener('click', () => {
   const lines = document.getElementById('import-text').value.split('\n').map(l => l.trim()).filter(Boolean);
   importDiffs = [];
+  const seenAccounts = new Set();
   const rows = lines.map(line => {
     const parsed = parseImportLine(line);
     if(!parsed) return null;
-    const existing = CASES.find(c => c.account === parsed.account);
+    if(seenAccounts.has(parsed.account)){
+      return { ok:false, text:`Л/с ${escapeHtml(parsed.account)}: повторная строка — пропущена.` };
+    }
+    seenAccounts.add(parsed.account);
+    const existing = CASES.find(c => normalizeAccount(c.account) === parsed.account);
     if(!existing) return { ok:false, text:`Л/с ${escapeHtml(parsed.account)}: должник не найден в реестре — строка пропущена.` };
 
     const newStatusKey = parsed.statusKey || existing.statusKey;
     const newNote = parsed.note || existing.note || '';
     const newFeeKey = parsed.feeKey || existing.feeKey;
     const changes = [];
-    if(newStatusKey !== existing.statusKey) changes.push(`статус: «${STATUS_DEFS[existing.statusKey].label}» → «${STATUS_DEFS[newStatusKey].label}»`);
+    if(newStatusKey !== existing.statusKey) changes.push(`статус: «${(STATUS_DEFS[existing.statusKey]||STATUS_DEFS.draft).label}» → «${(STATUS_DEFS[newStatusKey]||STATUS_DEFS.draft).label}»`);
     if(newNote !== (existing.note||'')) changes.push(`примечание: «${existing.note||'—'}» → «${newNote||'—'}»`);
     if(newFeeKey !== existing.feeKey) changes.push(`госпошлина: «${existing.feeKey==='paid'?'оплачена':'не оплачена'}» → «${newFeeKey==='paid'?'оплачена':'не оплачена'}»`);
     if(!changes.length) return { ok:false, text:`${escapeHtml(existing.name)}: изменений нет — пропущено.` };
@@ -748,27 +890,117 @@ document.getElementById('import-preview-btn').addEventListener('click', () => {
   document.getElementById('import-apply-btn').hidden = importDiffs.length === 0;
 });
 
-document.getElementById('import-apply-btn').addEventListener('click', async () => {
+document.getElementById('import-apply-btn').addEventListener('click', async e => {
   const n = importDiffs.length;
-  for(const d of importDiffs){
-    await updateDoc(doc(db, 'cases', d.id), { statusKey:d.statusKey, note:d.note, feeKey:d.feeKey });
-  }
-  await addLog(`Импорт из чата «Учёт статусов»: обновлено дел — ${n}.`);
-  importDiffs = [];
-  closeImport();
+  if(!n) return;
+  await performAction(e.currentTarget, 'Применение…', async () => {
+    await commitWithLog(batch => {
+      importDiffs.forEach(d => {
+        batch.update(doc(db, 'cases', d.id), { statusKey:d.statusKey, note:d.note, feeKey:d.feeKey });
+      });
+    }, `Импорт из чата «Учёт статусов»: обновлено дел — ${n}.`);
+    importDiffs = [];
+    closeImport();
+    showToast(`Импорт выполнен: обновлено дел — ${n}.`, 'success');
+  });
 });
 
 /* ---------------------------------------------------------------------------
    УТИЛИТЫ
 --------------------------------------------------------------------------- */
+class ValidationError extends Error{}
+
+function val(id){ return document.getElementById(id)?.value ?? ''; }
+function normalizeAccount(value){ return String(value||'').replace(/\s+/g, ''); }
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function escapeMdCell(value){ return String(value??'').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
+function todayLocalIso(){
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  const d = String(now.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
 function formatRuDate(iso){
   if(!iso) return '—';
   const [y,m,d] = iso.split('-');
-  return `${d}.${m}.${y}`;
+  return y && m && d ? `${d}.${m}.${y}` : iso;
 }
 function formatRuDateTime(iso){
   if(!iso) return '—';
   const [datePart, timePart] = iso.split('T');
-  return formatRuDate(datePart) + (timePart ? ', ' + timePart : '');
+  return formatRuDate(datePart) + (timePart ? ', ' + timePart.slice(0,5) : '');
 }
+
+function setConnectionStatus(state, text){
+  const el = document.getElementById('conn-status');
+  if(!el) return;
+  el.textContent = text;
+  el.classList.toggle('offline', state === 'offline');
+  el.classList.toggle('connecting', state === 'connecting');
+}
+
+window.addEventListener('offline', () => setConnectionStatus('offline', '● нет сети'));
+window.addEventListener('online', () => {
+  setConnectionStatus(
+    Object.values(listenerReady).every(Boolean) ? 'online' : 'connecting',
+    Object.values(listenerReady).every(Boolean) ? '● подключено' : '● восстановление подключения…'
+  );
+});
+
+function showToast(message, type='success'){
+  const region = document.getElementById('toast-region');
+  if(!region) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  region.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 180);
+  }, type === 'error' ? 5000 : 3000);
+}
+
+function reportError(context, err, notify=true){
+  console.error(context, err);
+  if(notify) showToast(`${context}. Повторите попытку.`, 'error');
+}
+
+function markInvalid(id, message){
+  const el = document.getElementById(id);
+  if(el){
+    el.classList.add('is-invalid');
+    el.focus();
+  }
+  showToast(message, 'error');
+}
+
+async function performAction(button, busyText, action){
+  if(button?.disabled) return false;
+  const originalText = button?.textContent;
+  if(button){
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.textContent = busyText;
+  }
+  try{
+    await action();
+    return true;
+  }catch(err){
+    if(!(err instanceof ValidationError)) reportError('Не удалось выполнить операцию', err);
+    return false;
+  }finally{
+    if(button){
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.textContent = originalText;
+    }
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  if(document.getElementById('import-backdrop').classList.contains('open')) closeImport();
+  else if(backdrop.classList.contains('open')) closeModal();
+});
