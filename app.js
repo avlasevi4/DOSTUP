@@ -228,7 +228,8 @@ function listenCases(){
     CASES = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     renderGroups();
     renderSummary();
-    document.getElementById('stamp-total').textContent = CASES.length || 18;
+    const stampTotal = document.getElementById('stamp-total');
+    if(stampTotal) stampTotal.textContent = CASES.length || 18;
     markListenerReady('cases');
   }, err => handleListenerError('реестра дел', err));
 }
