@@ -1186,32 +1186,44 @@ document.querySelectorAll('.tab-panel.active').forEach(p => {
    ЭКСПОРТ
 --------------------------------------------------------------------------- */
 document.getElementById('export-btn').addEventListener('click', () => {
-  let md = `# Статус по проекту исков — ${formatRuDate(todayLocalIso())}\n\n`;
-  GROUP_ORDER.forEach(gid => {
-    const cases = CASES.filter(c => (STATUS_DEFS[c.statusKey]||{}).group === gid).sort((a,b)=>a.num-b.num);
-    if(!cases.length) return;
-    md += `## ${GROUP_TITLES[gid]} (${cases.length})\n`;
-    md += `| # | Должник | Л/с | Статус | Примечание | Госпошлина |\n|---|---|---|---|---|---|\n`;
-    cases.forEach(c => {
-      const def = STATUS_DEFS[c.statusKey] || STATUS_DEFS.draft;
-      md += `| ${c.num} | ${escapeMdCell(c.name)} | ${escapeMdCell(c.account||'')} | ${def.icon} ${escapeMdCell(def.label)} | ${escapeMdCell(c.note||'')} | ${c.feeKey==='paid'?'оплачена':'не оплачена'} |\n`;
+  try {
+    let md = `# Статус по проекту исков — ${formatRuDate(todayLocalIso())}\n\n`;
+    GROUP_ORDER.forEach(gid => {
+      const cases = CASES.filter(c => (STATUS_DEFS[c.statusKey]||{}).group === gid).sort((a,b)=>a.num-b.num);
+      if(!cases.length) return;
+      md += `## ${GROUP_TITLES[gid]} (${cases.length})\n`;
+      md += `| # | Должник | Л/с | Статус | Примечание | Госпошлина |\n|---|---|---|---|---|---|\n`;
+      cases.forEach(c => {
+        const def = STATUS_DEFS[c.statusKey] || STATUS_DEFS.draft;
+        md += `| ${c.num} | ${escapeMdCell(c.name)} | ${escapeMdCell(c.account||'')} | ${def.icon} ${escapeMdCell(def.label)} | ${escapeMdCell(c.note||'')} | ${c.feeKey==='paid'?'оплачена':'не оплачена'} |\n`;
+      });
+      md += `\n`;
     });
-    md += `\n`;
-  });
-  if(COURT.length){
-    md += `## ⚖️ Судебное производство (${COURT.length})\n`;
-    COURT.forEach(c => {
-      const nh = nearestHearingOf(c);
-      md += `- ${DOT[c.dot]||'🔵'} ${c.name} — ${c.court}${c.caseNumber?', дело №'+c.caseNumber:''}${c.judge?', судья '+c.judge:''}${nh?', заседание '+formatRuDateTime(nh.date):''}\n`;
-    });
+    if(COURT.length){
+      md += `## ⚖️ Судебное производство (${COURT.length})\n`;
+      COURT.forEach(c => {
+        const nh = nearestUpcomingHearingOf(c);
+        const preparation = nh?.note ? `, подготовить: ${nh.note}` : '';
+        md += `- ${DOT[c.dot]||'🔵'} ${escapeMdCell(c.name)} — ${escapeMdCell(c.court||'')}${c.caseNumber?', дело №'+escapeMdCell(c.caseNumber):''}${c.judge?', судья '+escapeMdCell(c.judge):''}${nh?', заседание '+formatRuDateTime(nh.date):''}${escapeMdCell(preparation)}\n`;
+      });
+    }
+
+    // BOM помогает Windows-программам безошибочно распознавать русский UTF-8.
+    const blob = new Blob(['\uFEFF', md], { type:'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `статус-${todayLocalIso()}.md`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('Экспорт сформирован.', 'success');
+  } catch(error) {
+    console.error('Ошибка экспорта:', error);
+    showToast('Не удалось сформировать экспорт.', 'error');
   }
-  const blob = new Blob([md], { type:'text/markdown' });
-  const a = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  a.href = url;
-  a.download = `статус-${todayLocalIso()}.md`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
 });
 
 /* ---------------------------------------------------------------------------
