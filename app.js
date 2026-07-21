@@ -289,10 +289,13 @@ function listenLogs(){
     LOGS = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (b.date||'').localeCompare(a.date||'') || (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
     renderLog();
+    const updatedEl = document.getElementById('last-updated');
     if(LOGS[0]){
       const last = LOGS[0];
       const time = last.createdAt ? `, ${formatShortTimeFromMs(last.createdAt)}` : '';
-      document.getElementById('last-updated').textContent = `обновлено ${formatRuDate(last.date)}${time}`;
+      updatedEl.textContent = `обновлено ${formatRuDate(last.date)}${time}`;
+    } else {
+      updatedEl.textContent = 'обновлено —';
     }
     markListenerReady('logs');
   }, err => handleListenerError('журнала изменений', err));
@@ -482,20 +485,34 @@ function pluralDela(n){
 --------------------------------------------------------------------------- */
 const DOT = { blue:'🔵', done:'✅', denied:'❌', partial:'🟠' };
 
+function hearingDateObject(value){
+  if(!value) return null;
+  // Старые записи могли содержать только дату без времени. Такое заседание
+  // считаем актуальным до конца указанного дня, а не только до 00:00.
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T23:59:59` : value;
+  const dt = new Date(normalized);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function hearingsOf(c){
+  return Array.isArray(c?.hearings) ? c.hearings : [];
+}
+
 function nearestUpcomingHearingOf(c){
   const now = new Date();
-  return (c.hearings||[])
-    .filter(h => h.date && new Date(h.date) >= now)
-    .sort((a,b) => new Date(a.date) - new Date(b.date))[0] || null;
+  return hearingsOf(c)
+    .map(h => ({ hearing:h, dt:hearingDateObject(h?.date) }))
+    .filter(x => x.dt && x.dt >= now)
+    .sort((a,b) => a.dt - b.dt)[0]?.hearing || null;
 }
 
 function upcomingCourtHearings(limit = 3){
   return COURT
     .map(c => {
       const hearing = nearestUpcomingHearingOf(c);
-      return hearing ? { caseData:c, hearing, dt:new Date(hearing.date) } : null;
+      return hearing ? { caseData:c, hearing, dt:hearingDateObject(hearing.date) } : null;
     })
-    .filter(Boolean)
+    .filter(x => x && x.dt)
     .sort((a,b) => a.dt - b.dt || (a.caseData.name||'').localeCompare(b.caseData.name||'', 'ru'))
     .slice(0, limit);
 }
@@ -544,10 +561,9 @@ function renderCourtSummary(){
   const nearest = upcomingCourtHearings(3);
   const weekAhead = new Date(now.getTime() + 7*24*3600*1000);
   let weekCount = 0;
-  COURT.forEach(c => (c.hearings||[]).forEach(h => {
-    if(!h.date) return;
-    const dt = new Date(h.date);
-    if(dt >= now && dt <= weekAhead) weekCount++;
+  COURT.forEach(c => hearingsOf(c).forEach(h => {
+    const dt = hearingDateObject(h?.date);
+    if(dt && dt >= now && dt <= weekAhead) weekCount++;
   }));
 
   const upcomingHtml = nearest.length
@@ -663,7 +679,7 @@ function renderLog(){
       </div>
       <div class="log-text">${escapeHtml(l.text)}</div>
       ${details}
-      ${canUndo ? `<button type="button" class="btn-undo" data-log-id="${escapeHtml(l.id)}">Отменить это изменение</button>` : ''}
+      ${canUndo ? `<button type="button" class="btn-undo" data-log-id="${escapeAttr(l.id)}">Отменить это изменение</button>` : ''}
     </li>`;
   }).join('') || '<p style="color:var(--ink-soft)">Журнал пуст.</p>';
 
@@ -687,8 +703,8 @@ function renderBackups(){
         <span>${formatRuDate(b.date)}${b.createdAt ? `, ${formatTimeFromMs(b.createdAt)}` : ''} · дел: ${(b.cases||[]).length} · судебных карточек: ${(b.courtCases||[]).length}</span>
       </div>
       <div class="backup-actions">
-        <button type="button" class="btn-ghost backup-download" data-backup-id="${escapeHtml(b.id)}">Скачать JSON</button>
-        <button type="button" class="btn-danger backup-restore" data-backup-id="${escapeHtml(b.id)}">Восстановить</button>
+        <button type="button" class="btn-ghost backup-download" data-backup-id="${escapeAttr(b.id)}">Скачать JSON</button>
+        <button type="button" class="btn-danger backup-restore" data-backup-id="${escapeAttr(b.id)}">Восстановить</button>
       </div>
     </article>
   `).join('') || '<p class="backup-empty">Резервных копий пока нет.</p>';
@@ -939,7 +955,9 @@ function addPendingHearingFromInputs(){
 
 function openCourtModal(c){
   activeRecord = { kind:'court', data:c };
-  modalHearings = JSON.parse(JSON.stringify(c.hearings || (c.hearingDate ? [{date:c.hearingDate, note:''}] : [])));
+  modalHearings = JSON.parse(JSON.stringify(
+    hearingsOf(c).length ? hearingsOf(c) : (c.hearingDate ? [{date:c.hearingDate, note:''}] : [])
+  ));
   const isNew = !c.id;
   modalTitle.textContent = isNew ? 'Новое дело в производстве' : `Судебное дело · ${c.name}`;
   modalDelete.hidden = isNew;
@@ -953,7 +971,7 @@ function openCourtModal(c){
   const debtorField = isNew
     ? `<div class="field"><label>Должник</label><select id="f-caseSelect" ${availableCases.length ? '' : 'disabled'}>
         ${availableCases.length ? availableCases.map(cc =>
-          `<option value="${escapeHtml(cc.account)}" data-name="${escapeHtml(cc.name)}">${String(cc.num).padStart(2,'0')}. ${escapeHtml(cc.name)}</option>`
+          `<option value="${escapeAttr(cc.account)}" data-name="${escapeAttr(cc.name)}">${String(cc.num).padStart(2,'0')}. ${escapeHtml(cc.name)}</option>`
         ).join('') : '<option value="">Все должники уже добавлены в судебное производство</option>'}
       </select></div>`
     : `<div class="field"><label>Должник</label><div class="readonly-text">${escapeHtml(c.name)} (л/с ${escapeHtml(c.account||'—')})</div></div>`;
@@ -964,16 +982,16 @@ function openCourtModal(c){
       <div class="field"><label>Суд</label>
         <select id="f-court-select">
           <option value="">— выбрать —</option>
-          ${knownCourts.map(cv => `<option value="${escapeHtml(cv)}" ${cv===currentCourtVal?'selected':''}>${escapeHtml(cv)}</option>`).join('')}
+          ${knownCourts.map(cv => `<option value="${escapeAttr(cv)}" ${cv===currentCourtVal?'selected':''}>${escapeHtml(cv)}</option>`).join('')}
           <option value="__other__" ${currentCourtVal==='__other__'?'selected':''}>Другое (указать)</option>
         </select>
-        <input id="f-court-other" placeholder="Название суда" style="margin-top:6px;${currentCourtVal==='__other__'?'':'display:none'}" value="${currentCourtVal==='__other__'?escapeHtml(c.court||''):''}">
+        <input id="f-court-other" placeholder="Название суда" style="margin-top:6px;${currentCourtVal==='__other__'?'':'display:none'}" value="${currentCourtVal==='__other__'?escapeAttr(c.court||''):''}">
       </div>
-      <div class="field"><label>Номер дела</label><input id="f-caseNumber" value="${escapeHtml(c.caseNumber||'')}"></div>
+      <div class="field"><label>Номер дела</label><input id="f-caseNumber" value="${escapeAttr(c.caseNumber||'')}"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Дата подачи</label><input type="date" id="f-filedDate" value="${c.filedDate||''}"></div>
-      <div class="field"><label>Судья</label><input id="f-judge" value="${escapeHtml(c.judge||'')}" placeholder="Фамилия И.О."></div>
+      <div class="field"><label>Судья</label><input id="f-judge" value="${escapeAttr(c.judge||'')}" placeholder="Фамилия И.О."></div>
     </div>
     <div class="field"><label>Статус производства</label>
       <select id="f-dot">
@@ -1053,7 +1071,7 @@ document.getElementById('modal-save').addEventListener('click', async () => {
       const payload = {
         name, account, address: val('f-address').trim(),
         statusKey: val('f-statusKey'), note: val('f-note').trim(),
-        feeKey: val('f-feeKey'), protected: false
+        feeKey: val('f-feeKey'), protected: false, notesFixed: true
       };
 
       await runTransaction(db, async transaction => {
@@ -1183,6 +1201,263 @@ document.querySelectorAll('.tab-panel.active').forEach(p => {
 });
 
 /* ---------------------------------------------------------------------------
+   СВОДКА ДЛЯ TELEGRAM
+--------------------------------------------------------------------------- */
+const TELEGRAM_STATUS_TEXT = {
+  sent_court:   { icon:'✅', lead:'иск направлен в суд' },
+  sent_debtor:  { icon:'📮', lead:'отправлен ответчику, ждём реестр' },
+  signing:      { icon:'✍️', lead:'иск на подписи' },
+  draft:        { icon:'🟡', lead:'готов проект иска' },
+  waiting_doc:  { icon:'⏸️', lead:'подача приостановлена, ожидаем документы' },
+  problem:      { icon:'🔴', lead:'требует решения' },
+  postponed:    { icon:'🚫', lead:'работа отложена' },
+  disconnected: { icon:'⚪️', lead:'отключено' },
+  paid:         { icon:'⚪️', lead:'оплачено' },
+};
+
+const TELEGRAM_SUMMARY_GROUPS = [
+  { keys:['sent_court'], label:'Направлено в суд', icon:'✅' },
+  { keys:['waiting_doc'], label:'Ожидаем документы / подача приостановлена', icon:'⏸️' },
+  { keys:['sent_debtor'], label:'Отправлен, ждём реестр', icon:'📮' },
+  { keys:['draft'], label:'Подготовка', icon:'🟡' },
+  { keys:['signing'], label:'На подписи', icon:'✍️' },
+  { keys:['problem'], label:'Требуют решения', icon:'🔴' },
+  { keys:['postponed'], label:'Работа отложена', icon:'🚫' },
+  { keys:['disconnected','paid'], label:'Не требуется — отключение/оплата', icon:'⚪️' },
+];
+
+function compactText(value){
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function shortPersonName(value){
+  const parts = compactText(value).split(' ').filter(Boolean);
+  if(parts.length <= 1) return parts[0] || '—';
+  const surname = parts[0];
+  const restJoined = parts.slice(1).join('');
+  if(/^(?:[А-ЯЁA-Z]\.){1,4}$/u.test(restJoined)) return `${surname} ${restJoined}`;
+  const initials = parts.slice(1, 3)
+    .map(part => (part.match(/[А-ЯЁA-Z]/iu) || [part.charAt(0)])[0])
+    .filter(Boolean)
+    .map(letter => `${letter.toUpperCase()}.`)
+    .join('');
+  return initials ? `${surname} ${initials}` : surname;
+}
+
+function surnameOnly(value){
+  return compactText(value).split(' ')[0] || '—';
+}
+
+function formatDayMonth(value){
+  const datePart = String(value || '').split('T')[0];
+  const [year, month, day] = datePart.split('-');
+  return year && month && day ? `${day}.${month}` : formatRuDate(datePart);
+}
+
+function lowerFirst(value){
+  const text = compactText(value);
+  return text ? text.charAt(0).toLocaleLowerCase('ru-RU') + text.slice(1) : '';
+}
+
+function linkedCourtCase(caseData){
+  const account = normalizeAccount(caseData?.account);
+  return COURT.find(c => normalizeAccount(c.account) === account) || null;
+}
+
+function hearingsWithinDays(days = 30){
+  const now = new Date();
+  const end = new Date(now);
+  end.setDate(end.getDate() + days);
+  end.setHours(23, 59, 59, 999);
+
+  return COURT.flatMap(caseData => hearingsOf(caseData).map(hearing => ({
+    caseData,
+    hearing,
+    dt: hearingDateObject(hearing?.date)
+  })))
+    .filter(item => item.dt && item.dt >= now && item.dt <= end)
+    .sort((a,b) => a.dt - b.dt || (a.caseData.name || '').localeCompare(b.caseData.name || '', 'ru'));
+}
+
+function appendCaseNote(base, note, { dateInParentheses=false } = {}){
+  const clean = compactText(note);
+  if(!clean) return base;
+  if(dateInParentheses && /^\d{2}\.\d{2}\.\d{4}$/.test(clean)) return `${base} (${clean})`;
+  if(clean.toLocaleLowerCase('ru-RU').startsWith(base.toLocaleLowerCase('ru-RU'))) return clean;
+  return `${base} — ${lowerFirst(clean)}`;
+}
+
+function telegramCaseLine(c){
+  const cfg = TELEGRAM_STATUS_TEXT[c.statusKey] || { icon:'•', lead:(STATUS_DEFS[c.statusKey] || STATUS_DEFS.draft).label };
+  const note = compactText(c.note);
+  const courtCase = linkedCourtCase(c);
+  const nearest = courtCase ? nearestUpcomingHearingOf(courtCase) : null;
+  let description = cfg.lead;
+
+  if(c.statusKey === 'sent_court'){
+    if(note && !/заседан/i.test(note)) description = appendCaseNote(description, note, { dateInParentheses:true });
+    if(nearest) description += `, заседание ${formatDayMonth(nearest.date)}`;
+  } else if(c.statusKey === 'sent_debtor'){
+    const match = note.match(/^(\d{2}\.\d{2}\.\d{4})(?:,?\s*(.*))?$/);
+    if(match){
+      description = `отправлен ответчику (${match[1]})`;
+      if(match[2]) description += `, ${lowerFirst(match[2])}`;
+      else description += ', ждём реестр';
+    } else if(note && !/жд[её]м\s+реестр/i.test(note)) description = appendCaseNote(description, note);
+  } else if(c.statusKey === 'signing'){
+    const date = note.match(/\((\d{2}\.\d{2}\.\d{4})\)/)?.[1];
+    if(date) description += ` (${date})`;
+    else if(note && !/иск\s+на\s+подпис/i.test(note)) description = appendCaseNote(description, note);
+  } else if(c.statusKey === 'draft' && note) {
+    description = `${cfg.lead}, ${lowerFirst(note)}`;
+  } else if(c.statusKey === 'waiting_doc') {
+    const waitMatch = note.match(/^реестр\s+получен,?\s*жд[её]м\s+(.+)$/i);
+    if(waitMatch) description = `реестр получен, подача приостановлена (ждём ${lowerFirst(waitMatch[1])})`;
+    else description = appendCaseNote(description, note);
+  } else if(c.statusKey === 'postponed' && /задолженность\s+не\s+просужена/i.test(note)) {
+    description = 'задолженность не просужена, требуется просудить долг';
+  } else if(!['disconnected','paid'].includes(c.statusKey)) {
+    description = appendCaseNote(description, note);
+  }
+
+  return `${cfg.icon} ${c.num}. ${shortPersonName(c.name)} — ${description}`;
+}
+
+function telegramDeadlineLine({ caseData, hearing }){
+  const details = [];
+  if(compactText(caseData.court)) details.push(compactText(caseData.court));
+  if(compactText(caseData.judge)) details.push(`судья ${compactText(caseData.judge)}`);
+  let line = `${formatRuDateTime(hearing.date)} — судебное заседание: ${shortPersonName(caseData.name)}`;
+  if(details.length) line += ` (${details.join(', ')})`;
+  if(compactText(hearing.note)) line += ` — подготовить ${lowerFirst(hearing.note)}`;
+  return line;
+}
+
+function courtSortNumber(c){
+  const linked = CASES.find(item => normalizeAccount(item.account) === normalizeAccount(c.account));
+  return Number(linked?.num) || Number.MAX_SAFE_INTEGER;
+}
+
+function telegramCourtNote(value){
+  return compactText(value)
+    .replace(/\s*\(\s*зал\s*:[^)]+\)/giu, '')
+    .replace(/\s*[—,;]?\s*зал\s*№?\s*[\wА-ЯЁа-яё-]+/giu, '')
+    .trim();
+}
+
+function telegramCourtLine(c){
+  const icon = DOT[c.dot] || '🔵';
+  const parts = [];
+  const nearest = nearestUpcomingHearingOf(c);
+  if(compactText(c.caseNumber)) parts.push(`дело №${compactText(c.caseNumber)}`);
+  if(compactText(c.judge)) parts.push(`судья ${compactText(c.judge)}`);
+  if(nearest){
+    parts.push(`заседание ${formatRuDateTime(nearest.date)}`);
+  } else if(c.filedDate){
+    parts.push(`иск направлен ${formatRuDate(c.filedDate)}`);
+    if(!compactText(c.notes)) parts.push('движение неизвестно');
+  }
+  let line = `${icon} ${shortPersonName(c.name)} — ${parts.join(', ') || 'сведения о движении не указаны'}`;
+  if(nearest && compactText(nearest.note)) line += ` — подготовить ${lowerFirst(nearest.note)}`;
+  else if(!nearest && telegramCourtNote(c.notes)) line += ` — ${telegramCourtNote(c.notes)}`;
+  return line;
+}
+
+function buildTelegramSummary(){
+  const lines = [`📊 Работа по искам об обеспечении доступа на ${formatRuDate(todayLocalIso())}`, ''];
+  const deadlines = hearingsWithinDays(30);
+  lines.push('⏰ Ближайшие контрольные сроки:');
+  if(deadlines.length) deadlines.forEach(item => lines.push(telegramDeadlineLine(item)));
+  else lines.push('Назначенных заседаний на ближайшие 30 дней нет.');
+
+  lines.push('', '━━━━━━━━━━━━━━━━━━━━');
+  CASES.slice().sort((a,b) => Number(a.num) - Number(b.num)).forEach(c => lines.push(telegramCaseLine(c)));
+
+  lines.push('', '━━━━━━━━━━━━━━━━━━━━');
+  TELEGRAM_SUMMARY_GROUPS.forEach(group => {
+    const matches = CASES
+      .filter(c => group.keys.includes(c.statusKey))
+      .sort((a,b) => Number(a.num) - Number(b.num));
+    if(!matches.length) return;
+    lines.push(`${group.icon} ${group.label} (${matches.length}): ${matches.map(c => surnameOnly(c.name)).join(', ')}`);
+  });
+
+  lines.push('', '━━━━━━━━━━━━━━━━━━━━', `⚖️ СУДЕБНОЕ ПРОИЗВОДСТВО (${COURT.length} ${pluralDela(COURT.length)})`);
+  if(COURT.length){
+    COURT.slice()
+      .sort((a,b) => {
+        const hearingOrder = Number(!nearestUpcomingHearingOf(a)) - Number(!nearestUpcomingHearingOf(b));
+        return hearingOrder || courtSortNumber(a) - courtSortNumber(b) || (a.name || '').localeCompare(b.name || '', 'ru');
+      })
+      .forEach(c => lines.push(telegramCourtLine(c)));
+  } else {
+    lines.push('Дел в судебном производстве пока нет.');
+  }
+  return lines.join('\n');
+}
+
+const telegramBackdrop = document.getElementById('telegram-backdrop');
+const telegramText = document.getElementById('telegram-summary-text');
+const telegramCharCount = document.getElementById('telegram-char-count');
+
+function updateTelegramCharCount(){
+  const count = telegramText.value.length;
+  telegramCharCount.textContent = `${count} ${count === 1 ? 'знак' : (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'знака' : 'знаков')}`;
+  telegramCharCount.classList.toggle('is-over-limit', count > 4096);
+}
+
+function openTelegramSummary(){
+  if(!listenerReady.cases || !listenerReady.court){
+    showToast('Данные ещё загружаются. Повторите через несколько секунд.', 'info');
+    return;
+  }
+  telegramText.value = buildTelegramSummary();
+  updateTelegramCharCount();
+  openBackdrop(telegramBackdrop, '#telegram-summary-text');
+}
+
+function closeTelegramSummary(){
+  closeBackdrop(telegramBackdrop);
+}
+
+async function copyTelegramSummary(){
+  const text = telegramText.value.trim();
+  if(!text){ showToast('Сводка пуста.', 'error'); return false; }
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(err){
+    telegramText.focus();
+    telegramText.select();
+    const copied = document.execCommand('copy');
+    telegramText.setSelectionRange(0,0);
+    if(!copied) throw err;
+  }
+  showToast('Сводка скопирована.', 'success');
+  return true;
+}
+
+document.getElementById('telegram-summary-btn').addEventListener('click', openTelegramSummary);
+document.getElementById('telegram-close').addEventListener('click', closeTelegramSummary);
+document.getElementById('telegram-cancel').addEventListener('click', closeTelegramSummary);
+telegramBackdrop.addEventListener('click', e => { if(e.target === telegramBackdrop) closeTelegramSummary(); });
+telegramText.addEventListener('input', updateTelegramCharCount);
+document.getElementById('telegram-copy').addEventListener('click', copyTelegramSummary);
+document.getElementById('telegram-share').addEventListener('click', async () => {
+  const text = telegramText.value.trim();
+  if(!text){ showToast('Сводка пуста.', 'error'); return; }
+  try{
+    if(navigator.share){
+      await navigator.share({ title:'Работа по искам об обеспечении доступа', text });
+      return;
+    }
+    const copied = await copyTelegramSummary();
+    if(copied) window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  }catch(err){
+    if(err?.name !== 'AbortError') reportError('Не удалось открыть меню отправки', err);
+  }
+});
+
+/* ---------------------------------------------------------------------------
    ЭКСПОРТ
 --------------------------------------------------------------------------- */
 document.getElementById('export-btn').addEventListener('click', () => {
@@ -1285,8 +1560,8 @@ document.getElementById('import-preview-btn').addEventListener('click', () => {
     const newNote = parsed.note || existing.note || '';
     const newFeeKey = parsed.feeKey || existing.feeKey;
     const changes = [];
-    if(newStatusKey !== existing.statusKey) changes.push(`статус: «${(STATUS_DEFS[existing.statusKey]||STATUS_DEFS.draft).label}» → «${(STATUS_DEFS[newStatusKey]||STATUS_DEFS.draft).label}»`);
-    if(newNote !== (existing.note||'')) changes.push(`примечание: «${existing.note||'—'}» → «${newNote||'—'}»`);
+    if(newStatusKey !== existing.statusKey) changes.push(`статус: «${escapeHtml((STATUS_DEFS[existing.statusKey]||STATUS_DEFS.draft).label)}» → «${escapeHtml((STATUS_DEFS[newStatusKey]||STATUS_DEFS.draft).label)}»`);
+    if(newNote !== (existing.note||'')) changes.push(`примечание: «${escapeHtml(existing.note||'—')}» → «${escapeHtml(newNote||'—')}»`);
     if(newFeeKey !== existing.feeKey) changes.push(`госпошлина: «${existing.feeKey==='paid'?'оплачена':'не оплачена'}» → «${newFeeKey==='paid'?'оплачена':'не оплачена'}»`);
     if(!changes.length) return { ok:false, text:`${escapeHtml(existing.name)}: изменений нет — пропущено.` };
 
@@ -1331,6 +1606,7 @@ class ValidationError extends Error{}
 function val(id){ return document.getElementById(id)?.value ?? ''; }
 function normalizeAccount(value){ return String(value||'').replace(/\s+/g, ''); }
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function escapeAttr(s){ return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function escapeMdCell(value){ return String(value??'').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
 function canonicalJson(value){
   if(value === undefined) return 'undefined';
@@ -1353,11 +1629,16 @@ function formatRuDateTimeFromMs(ms){
   return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}, ${formatTimeFromMs(ms)}`;
 }
 function downloadJson(data, filename){
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json;charset=utf-8' });
   const a = document.createElement('a');
   const url = URL.createObjectURL(blob);
-  a.href = url; a.download = filename; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function todayLocalIso(){
   const now = new Date();
@@ -1446,6 +1727,8 @@ async function performAction(button, busyText, action){
 
 document.addEventListener('keydown', e => {
   if(e.key !== 'Escape') return;
-  if(document.getElementById('import-backdrop').classList.contains('open')) closeImport();
+  const telegramBackdrop = document.getElementById('telegram-backdrop');
+  if(telegramBackdrop?.classList.contains('open')) closeTelegramSummary();
+  else if(document.getElementById('import-backdrop').classList.contains('open')) closeImport();
   else if(backdrop.classList.contains('open')) closeModal();
 });

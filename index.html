@@ -7,9 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=3.7" />
-<link rel="icon" type="image/png" href="favicon-gas-v2.png?v=3.6" />
-<link rel="shortcut icon" href="favicon-gas-v2.png?v=3.6" />
+<link rel="stylesheet" href="styles.css?v=3.8" />
+<link rel="icon" type="image/png" href="favicon-gas-v2.png?v=3.8" />
+<link rel="shortcut icon" href="favicon-gas-v2.png?v=3.8" />
 </head>
 <body>
 
@@ -37,6 +37,7 @@
       </div>
       <div class="masthead-actions">
         <button id="add-case-btn" class="btn-ghost">+ Должник</button>
+        <button id="telegram-summary-btn" class="btn-ghost">📨 Сводка для Telegram</button>
         <button id="import-btn" class="btn-ghost" data-admin-only>Импорт</button>
         <button id="export-btn" class="btn-ghost" data-admin-only>Экспорт .md</button>
       </div>
@@ -142,10 +143,36 @@
   </div>
 </div>
 
+<!-- ===== МОДАЛЬНОЕ ОКНО: СВОДКА ДЛЯ TELEGRAM ===== -->
+<div id="telegram-backdrop" class="modal-backdrop" aria-hidden="true">
+  <div class="modal telegram-modal" role="dialog" aria-modal="true" aria-labelledby="telegram-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="telegram-title">Сводка для Telegram</h3>
+        <p class="telegram-subtitle">Все заседания на ближайшие 30 дней. Текст можно отредактировать перед отправкой.</p>
+      </div>
+      <button id="telegram-close" class="modal-close" aria-label="Закрыть">×</button>
+    </div>
+    <div class="modal-body telegram-modal-body">
+      <textarea id="telegram-summary-text" class="telegram-summary-text" aria-label="Текст сводки для Telegram"></textarea>
+      <div class="telegram-summary-meta">
+        <span id="telegram-char-count">0 знаков</span>
+        <span>Лимит одного сообщения Telegram — 4096 знаков</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div class="modal-foot-right">
+        <button id="telegram-cancel" class="btn-ghost btn-ghost-light">Закрыть</button>
+        <button id="telegram-copy" class="btn-ghost btn-ghost-light">Скопировать</button>
+        <button id="telegram-share" class="btn-primary">Поделиться</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 
-<script type="module" src="firebase-config.js"></script>
-<script type="module" src="seed-data.js"></script>
-<script type="module" src="app.js?v=3.7.2"></script>
+<script type="module" src="app.js?v=3.8"></script>
 </body>
 </html>
