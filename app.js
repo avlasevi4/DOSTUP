@@ -20,6 +20,12 @@ let importDiffs = [];     // изменения, посчитанные при �
 let bootStarted = false;
 let lastFocusedElement = null;
 const listenerReady = { cases:false, court:false, logs:false };
+const LOG_RETENTION_LIMIT = 100;
+const MANUAL_BACKUP_RETENTION_LIMIT = 10;
+let logPruneInFlight = false;
+let backupPruneInFlight = false;
+const pendingLogPruneIds = new Set();
+const pendingBackupPruneIds = new Set();
 
 /* ---------------------------------------------------------------------------
    ФИКСИРОВАННЫЕ СТАТУСЫ (значок и группа подставляются автоматически)
@@ -286,8 +292,10 @@ function listenCourt(){
 }
 function listenLogs(){
   onSnapshot(collection(db, 'logs'), snap => {
-    LOGS = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+    const sortedLogs = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (b.date||'').localeCompare(a.date||'') || (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
+    const overflow = sortedLogs.slice(LOG_RETENTION_LIMIT);
+    LOGS = sortedLogs.slice(0, LOG_RETENTION_LIMIT);
     renderLog();
     const updatedEl = document.getElementById('last-updated');
     if(LOGS[0]){
@@ -297,6 +305,7 @@ function listenLogs(){
     } else {
       updatedEl.textContent = 'обновлено —';
     }
+    if(overflow.length) void pruneLogOverflow(overflow);
     markListenerReady('logs');
   }, err => handleListenerError('журнала изменений', err));
 }
@@ -325,6 +334,51 @@ function recordData(record){
   if(!record) return null;
   const { id, ...data } = record;
   return JSON.parse(JSON.stringify(data));
+}
+
+async function deleteDocumentsInChunks(collectionName, ids){
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+  for(let offset = 0; offset < uniqueIds.length; offset += 450){
+    const batch = writeBatch(db);
+    uniqueIds.slice(offset, offset + 450).forEach(id => batch.delete(doc(db, collectionName, id)));
+    await batch.commit();
+  }
+}
+
+async function pruneLogOverflow(entries){
+  entries.forEach(entry => { if(entry?.id) pendingLogPruneIds.add(entry.id); });
+  if(logPruneInFlight || !pendingLogPruneIds.size) return;
+  logPruneInFlight = true;
+  try{
+    while(pendingLogPruneIds.size){
+      const ids = [...pendingLogPruneIds];
+      pendingLogPruneIds.clear();
+      await deleteDocumentsInChunks('logs', ids);
+    }
+  }catch(err){
+    reportError('Не удалось удалить старые записи журнала', err, false);
+  }finally{
+    logPruneInFlight = false;
+    if(pendingLogPruneIds.size) void pruneLogOverflow([]);
+  }
+}
+
+async function pruneManualBackupOverflow(entries){
+  entries.forEach(entry => { if(entry?.id) pendingBackupPruneIds.add(entry.id); });
+  if(backupPruneInFlight || !pendingBackupPruneIds.size) return;
+  backupPruneInFlight = true;
+  try{
+    while(pendingBackupPruneIds.size){
+      const ids = [...pendingBackupPruneIds];
+      pendingBackupPruneIds.clear();
+      await deleteDocumentsInChunks('backups', ids);
+    }
+  }catch(err){
+    reportError('Не удалось удалить старые ручные резервные копии', err, false);
+  }finally{
+    backupPruneInFlight = false;
+    if(pendingBackupPruneIds.size) void pruneManualBackupOverflow([]);
+  }
 }
 
 function logPayload(text, extra={}){
@@ -394,9 +448,14 @@ async function ensureBaselineBackup(){
 
 function listenBackups(){
   onSnapshot(collection(db, 'backups'), snap => {
-    BACKUPS = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+    const sortedBackups = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (Number(b.createdAt)||0) - (Number(a.createdAt)||0));
+    const manualBackups = sortedBackups.filter(b => b.type === 'manual');
+    const overflow = manualBackups.slice(MANUAL_BACKUP_RETENTION_LIMIT);
+    const overflowIds = new Set(overflow.map(b => b.id));
+    BACKUPS = sortedBackups.filter(b => !overflowIds.has(b.id));
     renderBackups();
+    if(overflow.length) void pruneManualBackupOverflow(overflow);
   }, err => reportError('Ошибка загрузки резервных копий', err, false));
 }
 
