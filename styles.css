@@ -255,10 +255,33 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
   transition:color .12s var(--ease);
 }
 .hearing-remove:hover{ color:var(--stamp-red); }
-.hearing-add-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-.hearing-add-row input{
-  padding:9px 10px; border:1px solid var(--line); border-radius:var(--radius); font-size:13.5px;
-  background:#fff; flex:1; min-width:140px;
+.hearing-add-row{
+  display:grid;
+  grid-template-columns:minmax(145px,1fr) minmax(150px,1fr);
+  gap:10px;
+  align-items:end;
+  margin-top:10px;
+}
+.hearing-input-block{ display:flex; flex-direction:column; gap:5px; min-width:0; }
+.hearing-input-block > label,.hearing-input-label{
+  color:var(--ink-soft); font-size:11px; font-weight:600; letter-spacing:.35px; text-transform:uppercase;
+}
+.hearing-add-row input,.hearing-add-row select{
+  width:100%; min-width:0; padding:9px 10px; border:1px solid var(--line);
+  border-radius:var(--radius); background:#fff; color:var(--ink); font-family:var(--font-body); font-size:13.5px;
+}
+.hearing-add-row input[type="date"]{ cursor:pointer; }
+.hearing-time-selects{ display:grid; grid-template-columns:1fr auto 1fr; gap:6px; align-items:center; }
+.hearing-time-selects > span{ color:var(--ink-soft); font-weight:700; }
+.hearing-note-block{ grid-column:1 / -1; }
+.hearing-add-row .btn-ghost{
+  grid-column:1 / -1; justify-self:end; min-height:39px; white-space:nowrap;
+}
+
+@media (max-width:480px){
+  .hearing-add-row{ grid-template-columns:1fr; }
+  .hearing-input-block,.hearing-note-block{ grid-column:1; }
+  .hearing-add-row .btn-ghost{ grid-column:1 / -1; width:100%; }
 }
 
 /* ==========================================================================

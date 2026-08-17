@@ -913,9 +913,7 @@ function closeModal(){
   activeRecord = null;
   modalHearings = [];
 }
-document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
-backdrop.addEventListener('click', e => { if(e.target === backdrop) closeModal(); });
 modalBody.addEventListener('input', e => e.target.classList.remove('is-invalid'));
 modalBody.addEventListener('change', e => e.target.classList.remove('is-invalid'));
 
@@ -990,16 +988,19 @@ function renderHearingsList(){
 
 function addPendingHearingFromInputs(){
   const dateInput = document.getElementById('f-newHearingDate');
+  const hourInput = document.getElementById('f-newHearingHour');
+  const minuteInput = document.getElementById('f-newHearingMinute');
   const noteInput = document.getElementById('f-newHearingNote');
-  if(!dateInput || !noteInput) return 'empty';
+  if(!dateInput || !hourInput || !minuteInput || !noteInput) return 'empty';
 
-  const dateValue = dateInput.value;
+  const datePart = dateInput.value;
   const noteValue = noteInput.value.trim();
-  if(!dateValue && !noteValue) return 'empty';
-  if(!dateValue){
+  if(!datePart && !noteValue) return 'empty';
+  if(!datePart){
     markInvalid('f-newHearingDate', 'Укажите дату заседания.');
     return 'invalid';
   }
+  const dateValue = `${datePart}T${hourInput.value}:${minuteInput.value}`;
   if(modalHearings.some(h => h.date === dateValue)){
     markInvalid('f-newHearingDate', 'Заседание на эту дату и время уже добавлено.');
     return 'invalid';
@@ -1010,6 +1011,34 @@ function addPendingHearingFromInputs(){
   noteInput.value = '';
   renderHearingsList();
   return 'added';
+}
+
+function timePartOptions(max, step, selected){
+  const values = [];
+  for(let value = 0; value <= max; value += step){
+    const padded = String(value).padStart(2, '0');
+    values.push(`<option value="${padded}" ${padded === selected ? 'selected' : ''}>${padded}</option>`);
+  }
+  return values.join('');
+}
+
+function enableWholeDatePicker(input){
+  if(!input) return;
+  input.addEventListener('pointerdown', event => {
+    if(typeof input.showPicker !== 'function') return;
+    try{
+      input.focus({ preventScroll:true });
+      input.showPicker();
+      event.preventDefault();
+    }catch(_err){ /* Браузер сам обработает обычный ввод. */ }
+  });
+  input.addEventListener('keydown', event => {
+    if(!['Enter', ' '].includes(event.key) || typeof input.showPicker !== 'function') return;
+    try{
+      input.showPicker();
+      event.preventDefault();
+    }catch(_err){ /* Нативный fallback остаётся доступен. */ }
+  });
 }
 
 function openCourtModal(c){
@@ -1064,8 +1093,22 @@ function openCourtModal(c){
       <label>Заседания</label>
       <div id="hearings-list"></div>
       <div class="hearing-add-row">
-        <input type="datetime-local" id="f-newHearingDate">
-        <input id="f-newHearingNote" placeholder="Что подготовить к заседанию">
+        <div class="hearing-input-block">
+          <label for="f-newHearingDate">Дата</label>
+          <input type="date" id="f-newHearingDate">
+        </div>
+        <div class="hearing-input-block">
+          <span class="hearing-input-label">Время</span>
+          <div class="hearing-time-selects">
+            <select id="f-newHearingHour" aria-label="Часы заседания">${timePartOptions(23, 1, '09')}</select>
+            <span aria-hidden="true">:</span>
+            <select id="f-newHearingMinute" aria-label="Минуты заседания">${timePartOptions(55, 5, '00')}</select>
+          </div>
+        </div>
+        <div class="hearing-input-block hearing-note-block">
+          <label for="f-newHearingNote">Что подготовить</label>
+          <input id="f-newHearingNote" placeholder="Документы или пояснение">
+        </div>
         <button type="button" id="btn-add-hearing" class="btn-ghost">+ Добавить заседание</button>
       </div>
     </div>
@@ -1076,6 +1119,7 @@ function openCourtModal(c){
   document.getElementById('btn-add-hearing').addEventListener('click', () => {
     addPendingHearingFromInputs();
   });
+  enableWholeDatePicker(document.getElementById('f-newHearingDate'));
 
   const courtSelect = document.getElementById('f-court-select');
   courtSelect.addEventListener('change', () => {
@@ -1214,7 +1258,7 @@ modalDelete.addEventListener('click', async () => {
     showToast('Сначала удалите связанное дело из судебного производства.', 'error');
     return;
   }
-  if(!confirm('Удалить эту запись? При необходимости операцию можно будет отменить через журнал администратора.')) return;
+  if(!confirm(`Удалить запись «${activeRecord.data.name}»?\n\nПри необходимости операцию можно будет отменить через журнал администратора.`)) return;
 
   await performAction(modalDelete, 'Удаление…', async () => {
     const coll = activeRecord.kind === 'case' ? 'cases' : 'courtCases';
@@ -1789,5 +1833,7 @@ document.addEventListener('keydown', e => {
   const telegramBackdrop = document.getElementById('telegram-backdrop');
   if(telegramBackdrop?.classList.contains('open')) closeTelegramSummary();
   else if(document.getElementById('import-backdrop').classList.contains('open')) closeImport();
-  else if(backdrop.classList.contains('open')) closeModal();
+  else if(backdrop.classList.contains('open')){
+    showToast('Закройте карточку кнопкой «Сохранить» или «Отмена».', 'info');
+  }
 });
