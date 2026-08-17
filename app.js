@@ -565,15 +565,14 @@ function nearestUpcomingHearingOf(c){
     .sort((a,b) => a.dt - b.dt)[0]?.hearing || null;
 }
 
-function upcomingCourtHearings(limit = 3){
+function upcomingCourtHearings(){
   return COURT
     .map(c => {
       const hearing = nearestUpcomingHearingOf(c);
       return hearing ? { caseData:c, hearing, dt:hearingDateObject(hearing.date) } : null;
     })
     .filter(x => x && x.dt)
-    .sort((a,b) => a.dt - b.dt || (a.caseData.name||'').localeCompare(b.caseData.name||'', 'ru'))
-    .slice(0, limit);
+    .sort((a,b) => a.dt - b.dt || (a.caseData.name||'').localeCompare(b.caseData.name||'', 'ru'));
 }
 
 function renderCourt(){
@@ -617,7 +616,7 @@ function renderCourtSummary(){
   const el = document.getElementById('court-summary-strip');
   if(!el) return;
   const now = new Date();
-  const nearest = upcomingCourtHearings(3);
+  const upcoming = upcomingCourtHearings();
   const weekAhead = new Date(now.getTime() + 7*24*3600*1000);
   let weekCount = 0;
   COURT.forEach(c => hearingsOf(c).forEach(h => {
@@ -625,14 +624,14 @@ function renderCourtSummary(){
     if(dt && dt >= now && dt <= weekAhead) weekCount++;
   }));
 
-  const upcomingHtml = nearest.length
+  const upcomingHtml = upcoming.length
     ? `<section class="upcoming-summary" aria-label="Ближайшие заседания">
         <div class="upcoming-summary-head">
           <b>⏰ Ближайшие заседания</b>
-          <span>до трёх дел</span>
+          <span>все назначенные</span>
         </div>
         <div class="upcoming-summary-list">
-          ${nearest.map(({caseData, hearing}) => `
+          ${upcoming.map(({caseData, hearing}) => `
             <button type="button" class="upcoming-summary-row" onclick="window.openCourtCardById('${caseData.id}')">
               <span class="upcoming-summary-date">${formatRuDateTime(hearing.date)}</span>
               <span class="upcoming-summary-case">${escapeHtml(caseData.name)}</span>
@@ -913,6 +912,7 @@ function closeModal(){
   activeRecord = null;
   modalHearings = [];
 }
+document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
 modalBody.addEventListener('input', e => e.target.classList.remove('is-invalid'));
 modalBody.addEventListener('change', e => e.target.classList.remove('is-invalid'));
