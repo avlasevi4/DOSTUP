@@ -1513,29 +1513,6 @@ document.querySelectorAll('.tab-panel.active').forEach(p => {
 /* ---------------------------------------------------------------------------
    СВОДКА ДЛЯ TELEGRAM
 --------------------------------------------------------------------------- */
-const TELEGRAM_STATUS_TEXT = {
-  sent_court:   { icon:'✅', lead:'иск направлен в суд' },
-  sent_debtor:  { icon:'📮', lead:'отправлен ответчику, ждём реестр' },
-  signing:      { icon:'✍️', lead:'иск на подписи' },
-  draft:        { icon:'🟡', lead:'готов проект иска' },
-  waiting_doc:  { icon:'⏸️', lead:'подача приостановлена, ожидаем документы' },
-  problem:      { icon:'🔴', lead:'требует решения' },
-  postponed:    { icon:'🚫', lead:'работа отложена' },
-  disconnected: { icon:'⚪️', lead:'отключено' },
-  paid:         { icon:'⚪️', lead:'оплачено' },
-};
-
-const TELEGRAM_SUMMARY_GROUPS = [
-  { keys:['sent_court'], label:'Направлено в суд', icon:'✅' },
-  { keys:['waiting_doc'], label:'Ожидаем документы / подача приостановлена', icon:'⏸️' },
-  { keys:['sent_debtor'], label:'Отправлен, ждём реестр', icon:'📮' },
-  { keys:['draft'], label:'Подготовка', icon:'🟡' },
-  { keys:['signing'], label:'На подписи', icon:'✍️' },
-  { keys:['problem'], label:'Требуют решения', icon:'🔴' },
-  { keys:['postponed'], label:'Работа отложена', icon:'🚫' },
-  { keys:['disconnected','paid'], label:'Не требуется — отключение/оплата', icon:'⚪️' },
-];
-
 function compactText(value){
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -1552,16 +1529,6 @@ function shortPersonName(value){
     .map(letter => `${letter.toUpperCase()}.`)
     .join('');
   return initials ? `${surname} ${initials}` : surname;
-}
-
-function surnameOnly(value){
-  return compactText(value).split(' ')[0] || '—';
-}
-
-function formatDayMonth(value){
-  const datePart = String(value || '').split('T')[0];
-  const [year, month, day] = datePart.split('-');
-  return year && month && day ? `${day}.${month}` : formatRuDate(datePart);
 }
 
 function lowerFirst(value){
@@ -1587,50 +1554,6 @@ function hearingsWithinDays(days = 30){
   })))
     .filter(item => item.dt && item.dt >= now && item.dt <= end)
     .sort((a,b) => a.dt - b.dt || (a.caseData.name || '').localeCompare(b.caseData.name || '', 'ru'));
-}
-
-function appendCaseNote(base, note, { dateInParentheses=false } = {}){
-  const clean = compactText(note);
-  if(!clean) return base;
-  if(dateInParentheses && /^\d{2}\.\d{2}\.\d{4}$/.test(clean)) return `${base} (${clean})`;
-  if(clean.toLocaleLowerCase('ru-RU').startsWith(base.toLocaleLowerCase('ru-RU'))) return clean;
-  return `${base} — ${lowerFirst(clean)}`;
-}
-
-function telegramCaseLine(c){
-  const cfg = TELEGRAM_STATUS_TEXT[c.statusKey] || { icon:'•', lead:(STATUS_DEFS[c.statusKey] || STATUS_DEFS.draft).label };
-  const note = compactText(c.note);
-  const courtCase = linkedCourtCase(c);
-  const nearest = courtCase ? nearestUpcomingHearingOf(courtCase) : null;
-  let description = cfg.lead;
-
-  if(c.statusKey === 'sent_court'){
-    if(note && !/заседан/i.test(note)) description = appendCaseNote(description, note, { dateInParentheses:true });
-    if(nearest) description += `, заседание ${formatDayMonth(nearest.date)}`;
-  } else if(c.statusKey === 'sent_debtor'){
-    const match = note.match(/^(\d{2}\.\d{2}\.\d{4})(?:,?\s*(.*))?$/);
-    if(match){
-      description = `отправлен ответчику (${match[1]})`;
-      if(match[2]) description += `, ${lowerFirst(match[2])}`;
-      else description += ', ждём реестр';
-    } else if(note && !/жд[её]м\s+реестр/i.test(note)) description = appendCaseNote(description, note);
-  } else if(c.statusKey === 'signing'){
-    const date = note.match(/\((\d{2}\.\d{2}\.\d{4})\)/)?.[1];
-    if(date) description += ` (${date})`;
-    else if(note && !/иск\s+на\s+подпис/i.test(note)) description = appendCaseNote(description, note);
-  } else if(c.statusKey === 'draft' && note) {
-    description = `${cfg.lead}, ${lowerFirst(note)}`;
-  } else if(c.statusKey === 'waiting_doc') {
-    const waitMatch = note.match(/^реестр\s+получен,?\s*жд[её]м\s+(.+)$/i);
-    if(waitMatch) description = `реестр получен, подача приостановлена (ждём ${lowerFirst(waitMatch[1])})`;
-    else description = appendCaseNote(description, note);
-  } else if(c.statusKey === 'postponed' && /задолженность\s+не\s+просужена/i.test(note)) {
-    description = 'задолженность не просужена, требуется просудить долг';
-  } else if(!['disconnected','paid'].includes(c.statusKey)) {
-    description = appendCaseNote(description, note);
-  }
-
-  return `${cfg.icon} ${c.num}. ${shortPersonName(c.name)} — ${description}`;
 }
 
 function telegramDeadlineLine({ caseData, hearing }){
@@ -1660,6 +1583,8 @@ function telegramCourtLine(c){
   const parts = [];
   const completed = isCompletedCourtCase(c);
   const nearest = nearestUpcomingHearingOf(c);
+  const registryNumber = courtSortNumber(c);
+  if(compactText(c.court)) parts.push(compactText(c.court));
   if(compactText(c.caseNumber)) parts.push(`дело №${compactText(c.caseNumber)}`);
   if(compactText(c.judge)) parts.push(`судья ${compactText(c.judge)}`);
   if(completed){
@@ -1668,33 +1593,49 @@ function telegramCourtLine(c){
   }else if(nearest){
     parts.push(`заседание ${formatRuDateTime(nearest.date)}`);
   } else if(c.filedDate){
-    parts.push(`иск направлен ${formatRuDate(c.filedDate)}`);
-    if(!compactText(c.notes)) parts.push('движение неизвестно');
+    parts.push(`иск направлен ${formatRuDate(c.filedDate)}`, 'заседание не назначено');
+  } else {
+    parts.push('заседание не назначено');
   }
-  let line = `${icon} ${shortPersonName(c.name)} — ${parts.join(', ') || 'сведения о движении не указаны'}`;
-  if(nearest && compactText(nearest.note)) line += ` — подготовить ${lowerFirst(nearest.note)}`;
-  else if(!nearest && telegramCourtNote(c.notes)) line += ` — ${telegramCourtNote(c.notes)}`;
-  return line;
+  const prefix = Number.isFinite(registryNumber) && registryNumber !== Number.MAX_SAFE_INTEGER ? `${registryNumber}. ` : '';
+  const lines = [`${icon} ${prefix}${shortPersonName(c.name)} — ${parts.join(', ')}`];
+  const progress = telegramCourtNote(c.notes);
+  lines.push(`   Ход дела: ${progress || 'дополнительные сведения не указаны'}`);
+  if(nearest && compactText(nearest.note)) lines.push(`   Подготовить: ${lowerFirst(nearest.note)}`);
+  lines.push(`   ${telegramEquipmentLine(c)}`);
+  return lines.join('\n');
+}
+
+const TELEGRAM_EQUIPMENT_ICONS = {
+  stove:'▦',
+  waterHeater:'💧',
+  boiler:'🔥',
+  meter:'◉'
+};
+
+function telegramEquipmentLine(c){
+  const equipment = courtEquipmentOf(c);
+  if(!equipment.length) return 'Оборудование: не указано';
+  const items = equipment.map(item => {
+    const icon = TELEGRAM_EQUIPMENT_ICONS[item.type] || '•';
+    const quantity = Math.max(1, Number(item.quantity) || 1);
+    return `${icon} ${compactText(item.label) || 'Оборудование'} ×${quantity}`;
+  });
+  return `Оборудование: ${items.join(' · ')}`;
+}
+
+function telegramClosedCaseLine(c){
+  const status = c.statusKey === 'paid' ? 'оплачено' : 'отключено';
+  const note = compactText(c.note);
+  return `⚪️ ${c.num}. ${shortPersonName(c.name)} — ${status}${note ? ` (${note})` : ''}`;
 }
 
 function buildTelegramSummary(){
   const lines = [`📊 Работа по искам об обеспечении доступа на ${formatRuDate(todayLocalIso())}`, ''];
   const deadlines = hearingsWithinDays(30);
-  lines.push('⏰ Ближайшие контрольные сроки:');
+  lines.push('⏰ БЛИЖАЙШИЕ СУДЕБНЫЕ ЗАСЕДАНИЯ');
   if(deadlines.length) deadlines.forEach(item => lines.push(telegramDeadlineLine(item)));
   else lines.push('Назначенных заседаний на ближайшие 30 дней нет.');
-
-  lines.push('', '━━━━━━━━━━━━━━━━━━━━');
-  CASES.slice().sort((a,b) => Number(a.num) - Number(b.num)).forEach(c => lines.push(telegramCaseLine(c)));
-
-  lines.push('', '━━━━━━━━━━━━━━━━━━━━');
-  TELEGRAM_SUMMARY_GROUPS.forEach(group => {
-    const matches = CASES
-      .filter(c => group.keys.includes(c.statusKey))
-      .sort((a,b) => Number(a.num) - Number(b.num));
-    if(!matches.length) return;
-    lines.push(`${group.icon} ${group.label} (${matches.length}): ${matches.map(c => surnameOnly(c.name)).join(', ')}`);
-  });
 
   lines.push('', '━━━━━━━━━━━━━━━━━━━━', `⚖️ СУДЕБНОЕ ПРОИЗВОДСТВО (${COURT.length} ${pluralDela(COURT.length)})`);
   if(COURT.length){
@@ -1704,6 +1645,13 @@ function buildTelegramSummary(){
   } else {
     lines.push('Дел в судебном производстве пока нет.');
   }
+
+  const closedCases = CASES
+    .filter(c => ['disconnected','paid'].includes(c.statusKey))
+    .sort((a,b) => Number(a.num) - Number(b.num));
+  lines.push('', '━━━━━━━━━━━━━━━━━━━━', `⚪️ ОТКЛЮЧЕНО / ОПЛАЧЕНО (${closedCases.length})`);
+  if(closedCases.length) closedCases.forEach(c => lines.push(telegramClosedCaseLine(c)));
+  else lines.push('Должников в этом разделе нет.');
   return lines.join('\n');
 }
 
