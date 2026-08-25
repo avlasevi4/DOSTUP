@@ -658,6 +658,84 @@ function courtSiteLinkHtml(c, compact=false){
   return `<a class="court-site-link${compact ? ' court-site-link-compact' : ''}" data-court-site-link href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${compact ? 'Сайт суда ↗' : 'Перейти на сайт суда ↗'}</a>`;
 }
 
+const COURT_EQUIPMENT_BY_ACCOUNT = {
+  '100021470': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'boiler', label:'Котёл / теплогенератор', quantity:1 }
+  ],
+  '100004288': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'boiler', label:'Котёл / теплогенератор', quantity:1 },
+    { type:'waterHeater', label:'Колонка', quantity:1 },
+    { type:'meter', label:'Счётчик', quantity:1 }
+  ],
+  '090011317': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'waterHeater', label:'Колонка', quantity:1 }
+  ],
+  '090007807': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'waterHeater', label:'Колонка', quantity:1 }
+  ],
+  '090024016': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'waterHeater', label:'Колонка', quantity:1 }
+  ],
+  '050002779': [
+    { type:'boiler', label:'Котёл / теплогенератор', quantity:1 }
+  ],
+  '100011188': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'boiler', label:'Котёл / теплогенератор', quantity:1 },
+    { type:'meter', label:'Счётчик', quantity:1 }
+  ],
+  '110062695': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'boiler', label:'Котёл / теплогенератор', quantity:1 },
+    { type:'meter', label:'Счётчик', quantity:1 }
+  ],
+  '010504941': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'boiler', label:'Котёл / теплогенератор', quantity:2 },
+    { type:'meter', label:'Счётчик', quantity:2 }
+  ],
+  '130000154': [
+    { type:'stove', label:'Плита', quantity:1 },
+    { type:'waterHeater', label:'Колонка', quantity:1 }
+  ]
+};
+
+function courtEquipmentOf(c){
+  if(Array.isArray(c?.equipment) && c.equipment.length) return c.equipment;
+  return COURT_EQUIPMENT_BY_ACCOUNT[String(c?.account || '').trim()] || [];
+}
+
+function equipmentIconSvg(type){
+  const common = 'viewBox="0 0 24 24" aria-hidden="true" focusable="false"';
+  if(type === 'stove') return `<svg ${common}><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="2.2"/><circle cx="16" cy="9" r="2.2"/><circle cx="8" cy="15" r="2.2"/><circle cx="16" cy="15" r="2.2"/></svg>`;
+  if(type === 'waterHeater') return `<svg ${common}><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M9 6h6M12 18c-2.1 0-3.4-1.5-3.4-3.1 0-1.7 1.5-3.1 3.4-5.4 1.9 2.3 3.4 3.7 3.4 5.4 0 1.6-1.3 3.1-3.4 3.1Z"/><path d="M12 13.2c.8 1 .9 1.4.9 1.8 0 .5-.4.9-.9.9s-.9-.4-.9-.9c0-.4.1-.8.9-1.8Z"/></svg>`;
+  if(type === 'boiler') return `<svg ${common}><path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 7h8M12 17.8c-1.8 0-3-1.2-3-2.7 0-1.4 1.2-2.6 3-4.8 1.8 2.2 3 3.4 3 4.8 0 1.5-1.2 2.7-3 2.7Z"/><path d="M21.5 8c1-1 1-2 0-3M21.5 14c1-1 1-2 0-3"/></svg>`;
+  return `<svg ${common}><circle cx="12" cy="12" r="8.5"/><path d="M7.5 10a5 5 0 0 1 9 0M12 12l3-3"/><circle cx="12" cy="12" r="1"/><path d="M8 16.5h8"/></svg>`;
+}
+
+function courtEquipmentHtml(c){
+  const equipment = courtEquipmentOf(c);
+  if(!equipment.length) return '';
+  const items = equipment.map(item => {
+    const quantity = Math.max(1, Number(item.quantity) || 1);
+    const label = String(item.label || 'Оборудование').trim();
+    return `<span class="equipment-chip equipment-${escapeAttr(item.type || 'meter')}" aria-label="${escapeAttr(label)}, количество ${quantity}">
+      <span class="equipment-icon">${equipmentIconSvg(item.type)}</span>
+      <span class="equipment-name">${escapeHtml(label)}</span>
+      <b class="equipment-quantity">×${quantity}</b>
+    </span>`;
+  }).join('');
+  return `<div class="court-equipment" aria-label="Газовое оборудование">
+    <div class="court-equipment-title">Оборудование</div>
+    <div class="court-equipment-list">${items}</div>
+  </div>`;
+}
+
 function upcomingCourtHearings(){
   return COURT
     .map(c => {
@@ -693,6 +771,7 @@ function renderCourt(){
       <div>
         <div class="court-name">${escapeHtml(c.name)}</div>
         <div class="court-meta">${escapeHtml(c.court || '—')}${c.caseNumber ? ' · дело №'+escapeHtml(c.caseNumber) : ''}${c.filedDate ? ' · подан '+formatRuDate(c.filedDate) : ''}</div>
+        ${courtEquipmentHtml(c)}
         ${c.notes ? `<div class="court-card-note"><b>Примечание:</b> ${escapeHtml(c.notes)}</div>` : '<div class="court-card-note is-empty"><b>Примечание:</b> не указано</div>'}
         ${courtSiteLinkHtml(c)}
       </div>

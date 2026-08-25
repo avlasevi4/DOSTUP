@@ -231,6 +231,31 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .court-card-note{ margin-top:8px; font-size:12.5px; color:var(--ink-soft); line-height:1.45; }
 .court-card-note b{ color:var(--ink); }
 .court-card-note.is-empty{ opacity:.72; }
+.court-equipment{ margin-top:11px; }
+.court-equipment-title{
+  margin-bottom:6px; color:var(--ink-soft); font-size:11px; font-weight:600;
+  letter-spacing:.055em; text-transform:uppercase;
+}
+.court-equipment-list{ display:flex; flex-wrap:wrap; gap:6px; }
+.equipment-chip{
+  display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:5px 8px 5px 6px;
+  border:1px solid #D7D3C8; border-radius:9px; background:#F8F6EF; color:var(--ink);
+  font-size:11.5px; line-height:1.25;
+}
+.equipment-icon{
+  display:inline-flex; align-items:center; justify-content:center; flex:0 0 23px; width:23px; height:23px;
+  border-radius:7px; background:#EAE7DC; color:var(--stamp-blue);
+}
+.equipment-icon svg{
+  width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.65;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.equipment-name{ font-weight:500; }
+.equipment-quantity{ color:var(--stamp-blue); font-family:var(--font-mono); font-size:11px; white-space:nowrap; }
+.equipment-stove .equipment-icon{ background:#F7E9D8; color:#A95F25; }
+.equipment-waterHeater .equipment-icon{ background:#E4EEF5; color:#2D6F99; }
+.equipment-boiler .equipment-icon{ background:#F4E3DF; color:#9B4437; }
+.equipment-meter .equipment-icon{ background:#EAE5F2; color:#68548C; }
 .court-preparation{ margin-top:7px; line-height:1.4; color:var(--ink); }
 .court-preparation span{ color:var(--ink-soft); font-weight:600; }
 .court-judge{ margin-top:5px; color:var(--ink-soft); }
@@ -411,6 +436,8 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
   .case-court-details{ grid-column:2 / -1; padding:10px 11px; }
 
   .court-card{ grid-template-columns:18px 1fr; }
+  .court-equipment-list{ gap:5px; }
+  .equipment-chip{ max-width:100%; }
   .court-hearing{ grid-column:1 / -1; width:auto; text-align:left; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line); }
   .upcoming-summary-row{ grid-template-columns:1fr; gap:0; padding:0; }
   .upcoming-summary-open{ grid-column:1; grid-template-columns:1fr; gap:3px; padding:10px 11px 3px; }
