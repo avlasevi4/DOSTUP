@@ -234,6 +234,15 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .court-preparation{ margin-top:7px; line-height:1.4; color:var(--ink); }
 .court-preparation span{ color:var(--ink-soft); font-weight:600; }
 .court-judge{ margin-top:5px; color:var(--ink-soft); }
+.court-site-link{
+  display:inline-flex; align-items:center; justify-content:center; margin-top:9px;
+  padding:6px 10px; border:1px solid rgba(45,91,128,.35); border-radius:var(--radius);
+  background:var(--blue-bg); color:var(--stamp-blue); font-size:12px; font-weight:600;
+  line-height:1.2; text-decoration:none; transition:background .12s var(--ease), border-color .12s var(--ease);
+}
+.court-site-link:hover{ background:#fff; border-color:var(--stamp-blue); }
+.court-site-link-compact{ margin-top:5px; padding:4px 8px; font-size:11.5px; white-space:nowrap; }
+.case-court-details .court-site-link{ margin-top:8px; }
 
 .upcoming-summary{
   flex:1 1 100%; background:var(--paper-lift); border:1px solid var(--line);
@@ -248,17 +257,22 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .upcoming-summary-list{ display:flex; flex-direction:column; }
 .upcoming-summary-row{
   width:100%; display:grid; grid-template-columns:170px minmax(190px, .8fr) minmax(220px, 1fr) minmax(170px, .75fr);
-  gap:14px; align-items:start; padding:11px 14px; border:0; border-top:1px solid var(--line);
+  gap:14px; align-items:stretch; padding:0; border:0; border-top:1px solid var(--line);
   background:transparent; color:var(--ink); text-align:left; font-size:12.5px;
   transition:background .12s var(--ease);
 }
 .upcoming-summary-row:first-child{ border-top:0; }
 .upcoming-summary-row:hover{ background:#fff; }
+.upcoming-summary-open{
+  grid-column:1 / 4; display:grid; grid-template-columns:170px minmax(190px, .8fr) minmax(220px, 1fr);
+  gap:14px; align-items:start; padding:11px 0 11px 14px; border:0; background:transparent;
+  color:var(--ink); text-align:left; font:inherit;
+}
 .upcoming-summary-date{ font-family:var(--font-mono); color:var(--stamp-blue); font-weight:600; }
 .upcoming-summary-case{ font-weight:600; }
 .upcoming-summary-note{ color:var(--ink-soft); line-height:1.4; }
 .upcoming-summary-note b{ color:var(--ink); }
-.upcoming-summary-court{ color:var(--ink-soft); line-height:1.4; text-align:right; }
+.upcoming-summary-court{ display:flex; flex-direction:column; align-items:flex-end; padding:11px 14px 11px 0; color:var(--ink-soft); line-height:1.4; text-align:right; }
 .upcoming-summary-empty p{ margin:0; padding:12px 14px; color:var(--ink-soft); font-size:13px; }
 
 .hearing-item{
@@ -346,6 +360,7 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
   width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius);
   font-size:14px; background:#fff; color:var(--ink);
 }
+.field-hint{ margin:6px 0 0; color:var(--ink-soft); font-size:11.5px; line-height:1.4; }
 .field textarea{ min-height:70px; resize:vertical; font-family:var(--font-body); }
 .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 .readonly-text{
@@ -397,8 +412,9 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 
   .court-card{ grid-template-columns:18px 1fr; }
   .court-hearing{ grid-column:1 / -1; width:auto; text-align:left; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line); }
-  .upcoming-summary-row{ grid-template-columns:1fr; gap:3px; padding:10px 11px; }
-  .upcoming-summary-court{ text-align:left; margin-top:3px; }
+  .upcoming-summary-row{ grid-template-columns:1fr; gap:0; padding:0; }
+  .upcoming-summary-open{ grid-column:1; grid-template-columns:1fr; gap:3px; padding:10px 11px 3px; }
+  .upcoming-summary-court{ align-items:flex-start; padding:0 11px 10px; text-align:left; }
   .upcoming-summary-head{ padding:10px 11px; }
 
   .field-row{ grid-template-columns:1fr; }

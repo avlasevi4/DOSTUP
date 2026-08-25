@@ -509,6 +509,10 @@ function renderGroups(){
         <div class="case-edit-icon">✎</div>
         ${completedCourt ? completedCourtDetailsHtml(completedCourt) : ''}
       `;
+      row.querySelectorAll('[data-court-site-link]').forEach(link => {
+        link.addEventListener('click', event => event.stopPropagation());
+        link.addEventListener('keydown', event => event.stopPropagation());
+      });
       row.addEventListener('click', () => openCaseModal(c));
       row.addEventListener('keydown', e => {
         if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openCaseModal(c); }
@@ -644,7 +648,14 @@ function completedCourtDetailsHtml(c){
     ${meta ? `<div class="case-court-meta">${meta}</div>` : ''}
     <div class="case-court-section"><b>Проведённые заседания:</b><ul>${hearingItems}</ul></div>
     ${c.notes ? `<div class="case-court-section"><b>Материалы и примечания:</b> ${escapeHtml(c.notes)}</div>` : ''}
+    ${courtSiteLinkHtml(c)}
   </div>`;
+}
+
+function courtSiteLinkHtml(c, compact=false){
+  const href = normalizeWebUrl(c?.caseUrl);
+  if(!href) return '';
+  return `<a class="court-site-link${compact ? ' court-site-link-compact' : ''}" data-court-site-link href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${compact ? 'Сайт суда ↗' : 'Перейти на сайт суда ↗'}</a>`;
 }
 
 function upcomingCourtHearings(){
@@ -683,6 +694,7 @@ function renderCourt(){
         <div class="court-name">${escapeHtml(c.name)}</div>
         <div class="court-meta">${escapeHtml(c.court || '—')}${c.caseNumber ? ' · дело №'+escapeHtml(c.caseNumber) : ''}${c.filedDate ? ' · подан '+formatRuDate(c.filedDate) : ''}</div>
         ${c.notes ? `<div class="court-card-note"><b>Примечание:</b> ${escapeHtml(c.notes)}</div>` : '<div class="court-card-note is-empty"><b>Примечание:</b> не указано</div>'}
+        ${courtSiteLinkHtml(c)}
       </div>
       <div class="court-hearing">
         <b>${hearingText}</b>
@@ -690,6 +702,10 @@ function renderCourt(){
         ${c.judge ? `<div class="court-judge">Судья: ${escapeHtml(c.judge)}</div>` : ''}
       </div>
     `;
+    card.querySelectorAll('[data-court-site-link]').forEach(link => {
+      link.addEventListener('click', event => event.stopPropagation());
+      link.addEventListener('keydown', event => event.stopPropagation());
+    });
     card.addEventListener('click', () => openCourtModal(c));
     card.addEventListener('keydown', e => {
       if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openCourtModal(c); }
@@ -718,12 +734,17 @@ function renderCourtSummary(){
         </div>
         <div class="upcoming-summary-list">
           ${upcoming.map(({caseData, hearing}) => `
-            <button type="button" class="upcoming-summary-row" onclick="window.openCourtCardById('${caseData.id}')">
-              <span class="upcoming-summary-date">${formatRuDateTime(hearing.date)}</span>
-              <span class="upcoming-summary-case">${escapeHtml(caseData.name)}</span>
-              <span class="upcoming-summary-note"><b>Подготовить:</b> ${escapeHtml((hearing.note||'').trim() || 'не указано')}</span>
-              <span class="upcoming-summary-court">${escapeHtml(caseData.court || 'Суд не указан')}</span>
-            </button>
+            <div class="upcoming-summary-row">
+              <button type="button" class="upcoming-summary-open" data-court-card-id="${escapeAttr(caseData.id)}" aria-label="Открыть судебное дело: ${escapeAttr(caseData.name)}">
+                <span class="upcoming-summary-date">${formatRuDateTime(hearing.date)}</span>
+                <span class="upcoming-summary-case">${escapeHtml(caseData.name)}</span>
+                <span class="upcoming-summary-note"><b>Подготовить:</b> ${escapeHtml((hearing.note||'').trim() || 'не указано')}</span>
+              </button>
+              <span class="upcoming-summary-court">
+                <span>${escapeHtml(caseData.court || 'Суд не указан')}</span>
+                ${courtSiteLinkHtml(caseData, true)}
+              </span>
+            </div>
           `).join('')}
         </div>
       </section>`
@@ -735,6 +756,15 @@ function renderCourtSummary(){
   el.innerHTML = upcomingHtml
     + `<div class="summary-chip">⚖️ Всего в производстве: <b>${COURT.length}</b></div>`
     + `<div class="summary-chip">📅 Заседаний за 7 дней: <b>${weekCount}</b></div>`;
+
+  el.querySelectorAll('[data-court-card-id]').forEach(row => {
+    const openCard = () => window.openCourtCardById(row.dataset.courtCardId);
+    row.addEventListener('click', openCard);
+  });
+  el.querySelectorAll('[data-court-site-link]').forEach(link => {
+    link.addEventListener('click', event => event.stopPropagation());
+    link.addEventListener('keydown', event => event.stopPropagation());
+  });
 }
 window.openCourtCardById = function(id){
   const c = COURT.find(x => x.id === id);
@@ -747,7 +777,7 @@ window.openCourtCardById = function(id){
 const FIELD_LABELS = {
   num:'Номер', name:'ФИО', account:'Лицевой счёт', address:'Адрес',
   statusKey:'Статус', note:'Примечание', feeKey:'Госпошлина', protected:'Защищённая запись',
-  court:'Суд', caseNumber:'Номер дела', filedDate:'Дата подачи', judge:'Судья',
+  court:'Суд', caseNumber:'Номер дела', caseUrl:'Ссылка на дело', filedDate:'Дата подачи', judge:'Судья',
   dot:'Статус производства', notes:'Заметки', hearings:'Заседания', nextCaseNum:'Следующий номер'
 };
 
@@ -1164,6 +1194,11 @@ function openCourtModal(c){
       </div>
       <div class="field"><label>Номер дела</label><input id="f-caseNumber" value="${escapeAttr(c.caseNumber||'')}"></div>
     </div>
+    <div class="field">
+      <label for="f-caseUrl">Ссылка на дело на сайте суда</label>
+      <input type="url" id="f-caseUrl" value="${escapeAttr(c.caseUrl||'')}" placeholder="https://...">
+      <p class="field-hint">После сохранения кнопка перехода появится в карточке и в ближайших заседаниях.</p>
+    </div>
     <div class="field-row">
       <div class="field"><label>Дата подачи</label><input type="date" id="f-filedDate" value="${c.filedDate||''}"></div>
       <div class="field"><label>Судья</label><input id="f-judge" value="${escapeAttr(c.judge||'')}" placeholder="Фамилия И.О."></div>
@@ -1300,6 +1335,12 @@ document.getElementById('modal-save').addEventListener('click', async () => {
         throw new ValidationError();
       }
       if(!val('f-filedDate')){ markInvalid('f-filedDate', 'Укажите дату подачи иска.'); throw new ValidationError(); }
+      const rawCaseUrl = val('f-caseUrl').trim();
+      const caseUrl = normalizeWebUrl(rawCaseUrl);
+      if(rawCaseUrl && !caseUrl){
+        markInvalid('f-caseUrl', 'Укажите корректную ссылку, начинающуюся с http:// или https://.');
+        throw new ValidationError();
+      }
       if(isNew && COURT.some(item => normalizeAccount(item.account) === account)){
         showToast('Этот должник уже есть в судебном производстве.', 'error');
         throw new ValidationError();
@@ -1313,7 +1354,7 @@ document.getElementById('modal-save').addEventListener('click', async () => {
 
       const updated = {
         name, account,
-        court: finalCourt, caseNumber: val('f-caseNumber').trim(),
+        court: finalCourt, caseNumber: val('f-caseNumber').trim(), caseUrl,
         filedDate: val('f-filedDate'), judge: val('f-judge').trim(),
         dot: val('f-dot'), notes: val('f-notes').trim(),
         hearings: modalHearings.slice().sort((a,b) => new Date(a.date) - new Date(b.date))
@@ -1800,6 +1841,16 @@ class ValidationError extends Error{}
 
 function val(id){ return document.getElementById(id)?.value ?? ''; }
 function normalizeAccount(value){ return String(value||'').replace(/\s+/g, ''); }
+function normalizeWebUrl(value){
+  const text = String(value || '').trim();
+  if(!text) return '';
+  try{
+    const parsed = new URL(text);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+  }catch(_err){
+    return '';
+  }
+}
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
 function escapeAttr(s){ return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function escapeMdCell(value){ return String(value??'').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
