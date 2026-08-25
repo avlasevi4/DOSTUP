@@ -1571,39 +1571,18 @@ function courtSortNumber(c){
   return Number(linked?.num) || Number.MAX_SAFE_INTEGER;
 }
 
-function telegramCourtNote(value){
-  return compactText(value)
-    .replace(/\s*\(\s*зал\s*:[^)]+\)/giu, '')
-    .replace(/\s*[—,;]?\s*зал\s*№?\s*[\wА-ЯЁа-яё-]+/giu, '')
-    .trim();
-}
-
 function telegramCourtLine(c){
   const icon = DOT[c.dot] || '🔵';
-  const parts = [];
-  const completed = isCompletedCourtCase(c);
   const nearest = nearestUpcomingHearingOf(c);
   const registryNumber = courtSortNumber(c);
-  if(compactText(c.court)) parts.push(compactText(c.court));
-  if(compactText(c.caseNumber)) parts.push(`дело №${compactText(c.caseNumber)}`);
-  if(compactText(c.judge)) parts.push(`судья ${compactText(c.judge)}`);
-  if(completed){
-    const decisionDate = courtDecisionDateOf(c);
-    parts.push(`${lowerFirst(courtOutcomeLabel(c))}${decisionDate ? `, решение от ${formatRuDate(decisionDate)}` : ', дата решения не указана'}`);
-  }else if(nearest){
-    parts.push(`заседание ${formatRuDateTime(nearest.date)}`);
-  } else if(c.filedDate){
-    parts.push(`иск направлен ${formatRuDate(c.filedDate)}`, 'заседание не назначено');
-  } else {
-    parts.push('заседание не назначено');
-  }
+  const parts = [
+    compactText(c.court) || 'суд не указан',
+    compactText(c.caseNumber) ? `дело №${compactText(c.caseNumber)}` : 'номер дела не указан',
+    compactText(c.judge) ? `судья ${compactText(c.judge)}` : 'судья не указан',
+    nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено'
+  ];
   const prefix = Number.isFinite(registryNumber) && registryNumber !== Number.MAX_SAFE_INTEGER ? `${registryNumber}. ` : '';
-  const lines = [`${icon} ${prefix}${shortPersonName(c.name)} — ${parts.join(', ')}`];
-  const progress = telegramCourtNote(c.notes);
-  lines.push(`   Ход дела: ${progress || 'дополнительные сведения не указаны'}`);
-  if(nearest && compactText(nearest.note)) lines.push(`   Подготовить: ${lowerFirst(nearest.note)}`);
-  lines.push(`   ${telegramEquipmentLine(c)}`);
-  return lines.join('\n');
+  return `${icon} ${prefix}${compactText(c.name) || 'ФИО не указано'} — ${parts.join(', ')}\n   ${telegramEquipmentLine(c)}`;
 }
 
 const TELEGRAM_EQUIPMENT_ICONS = {
