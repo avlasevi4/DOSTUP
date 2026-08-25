@@ -1571,15 +1571,24 @@ function courtSortNumber(c){
   return Number(linked?.num) || Number.MAX_SAFE_INTEGER;
 }
 
+function telegramCourtResult(c){
+  const result = c.dot === 'done'
+    ? 'иск удовлетворён'
+    : (c.dot === 'partial' ? 'иск удовлетворён частично' : 'в удовлетворении иска отказано');
+  const decisionDate = courtDecisionDateOf(c);
+  return `${result}${decisionDate ? `, решение от ${formatRuDate(decisionDate)}` : ', дата решения не указана'}`;
+}
+
 function telegramCourtLine(c){
   const icon = DOT[c.dot] || '🔵';
   const nearest = nearestUpcomingHearingOf(c);
+  const completed = isCompletedCourtCase(c);
   const registryNumber = courtSortNumber(c);
   const parts = [
     compactText(c.court) || 'суд не указан',
     compactText(c.caseNumber) ? `дело №${compactText(c.caseNumber)}` : 'номер дела не указан',
     compactText(c.judge) ? `судья ${compactText(c.judge)}` : 'судья не указан',
-    nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено'
+    completed ? telegramCourtResult(c) : (nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено')
   ];
   const prefix = Number.isFinite(registryNumber) && registryNumber !== Number.MAX_SAFE_INTEGER ? `${registryNumber}. ` : '';
   return `${icon} ${prefix}${compactText(c.name) || 'ФИО не указано'} — ${parts.join(', ')}\n   ${telegramEquipmentLine(c)}`;
