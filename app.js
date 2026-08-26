@@ -746,6 +746,8 @@ function upcomingCourtHearings(){
     .sort((a,b) => a.dt - b.dt || (a.caseData.name||'').localeCompare(b.caseData.name||'', 'ru'));
 }
 
+let courtInfoHighlightTimer = null;
+
 function renderCourt(){
   const el = document.getElementById('court-list');
   if(COURT.length === 0){
@@ -757,6 +759,7 @@ function renderCourt(){
     const card = document.createElement('div');
     const completed = isCompletedCourtCase(c);
     card.className = `court-card${completed ? ' court-card-completed' : ''}`;
+    card.dataset.courtInfoId = c.id;
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `Открыть судебное дело: ${c.name}`);
@@ -814,7 +817,7 @@ function renderCourtSummary(){
         <div class="upcoming-summary-list">
           ${upcoming.map(({caseData, hearing}) => `
             <div class="upcoming-summary-row">
-              <button type="button" class="upcoming-summary-open" data-court-card-id="${escapeAttr(caseData.id)}" aria-label="Открыть судебное дело: ${escapeAttr(caseData.name)}">
+              <button type="button" class="upcoming-summary-open" data-court-info-target="${escapeAttr(caseData.id)}" aria-label="Перейти к информационной полосе: ${escapeAttr(caseData.name)}">
                 <span class="upcoming-summary-date">${formatRuDateTime(hearing.date)}</span>
                 <span class="upcoming-summary-case">${escapeHtml(caseData.name)}</span>
                 <span class="upcoming-summary-note"><b>Подготовить:</b> ${escapeHtml((hearing.note||'').trim() || 'не указано')}</span>
@@ -836,18 +839,29 @@ function renderCourtSummary(){
     + `<div class="summary-chip">⚖️ Всего в производстве: <b>${COURT.length}</b></div>`
     + `<div class="summary-chip">📅 Заседаний за 7 дней: <b>${weekCount}</b></div>`;
 
-  el.querySelectorAll('[data-court-card-id]').forEach(row => {
-    const openCard = () => window.openCourtCardById(row.dataset.courtCardId);
-    row.addEventListener('click', openCard);
+  el.querySelectorAll('[data-court-info-target]').forEach(row => {
+    row.addEventListener('click', () => window.scrollToCourtInfoById(row.dataset.courtInfoTarget));
   });
   el.querySelectorAll('[data-court-site-link]').forEach(link => {
     link.addEventListener('click', event => event.stopPropagation());
     link.addEventListener('keydown', event => event.stopPropagation());
   });
 }
-window.openCourtCardById = function(id){
-  const c = COURT.find(x => x.id === id);
-  if(c) openCourtModal(c);
+window.scrollToCourtInfoById = function(id){
+  const card = [...document.querySelectorAll('.court-card[data-court-info-id]')]
+    .find(item => item.dataset.courtInfoId === id);
+  if(!card) return;
+
+  document.querySelectorAll('.court-card-targeted').forEach(item => item.classList.remove('court-card-targeted'));
+  if(courtInfoHighlightTimer) clearTimeout(courtInfoHighlightTimer);
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  card.scrollIntoView({ behavior:reduceMotion ? 'auto' : 'smooth', block:'center' });
+  card.focus({ preventScroll:true });
+  card.classList.add('court-card-targeted');
+  courtInfoHighlightTimer = setTimeout(() => {
+    card.classList.remove('court-card-targeted');
+    courtInfoHighlightTimer = null;
+  }, 2400);
 };
 
 /* ---------------------------------------------------------------------------

@@ -218,9 +218,13 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .court-card{
   background:var(--paper-lift); border:1px solid var(--line); border-radius:var(--radius);
   padding:18px 20px; margin-bottom:14px; cursor:pointer; transition:border-color .12s var(--ease), transform .1s var(--ease);
-  display:grid; grid-template-columns:20px 1fr auto; gap:16px; align-items:start;
+  display:grid; grid-template-columns:20px 1fr auto; gap:16px; align-items:start; scroll-margin-top:24px;
 }
 .court-card:hover{ border-color:var(--stamp-blue); transform:translateY(-1px); }
+.court-card.court-card-targeted{
+  border-color:var(--stamp-blue); background:#fff;
+  box-shadow:0 0 0 4px rgba(45,91,128,.16), 0 8px 22px rgba(32,48,62,.12);
+}
 .court-card-completed{ background:#F1F0EA; border-color:#D3D1C7; }
 .court-card-completed .court-hearing > b{ color:var(--ink); }
 .court-dot{ font-size:16px; line-height:1; padding-top:2px; }
