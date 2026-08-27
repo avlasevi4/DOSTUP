@@ -774,7 +774,7 @@ let courtInfoHighlightTimer = null;
 
 function renderCourt(){
   const el = document.getElementById('court-list');
-  renderCourtHearingWarning();
+  renderCourtAwaitingHearings();
   if(COURT.length === 0){
     el.innerHTML = `<p style="color:var(--ink-soft)">Пока нет дел в судебном производстве — появятся здесь, как только иск будет направлен в суд.</p>`;
     return;
@@ -875,18 +875,45 @@ function renderCourtSummary(){
   });
 }
 
-function renderCourtHearingWarning(){
-  const warning = document.getElementById('court-hearings-warning');
-  if(!warning) return;
+function renderCourtAwaitingHearings(){
+  const container = document.getElementById('court-awaiting-hearings');
+  if(!container) return;
   const awaiting = courtCasesAwaitingHearingDate();
   if(!awaiting.length){
-    warning.hidden = true;
-    warning.textContent = '';
+    container.hidden = true;
+    container.innerHTML = '';
     return;
   }
-  warning.hidden = false;
-  const items = awaiting.map(({caseData, hearing}) => `${caseData.name} (${formatRuDate(hearing.date)})`);
-  warning.textContent = `⚠ Новая дата не назначена после заседания: ${items.join(', ')}.`;
+  container.hidden = false;
+  container.innerHTML = `<section class="upcoming-summary upcoming-summary-attention" aria-label="Ожидается новая дата заседания">
+    <div class="upcoming-summary-head">
+      <b>⚠ Ожидается новая дата заседания</b>
+      <span>проверьте сведения на сайте суда</span>
+    </div>
+    <div class="upcoming-summary-list">
+      ${awaiting.map(({caseData, hearing}) => `
+        <div class="upcoming-summary-row">
+          <button type="button" class="upcoming-summary-open" data-court-info-target="${escapeAttr(caseData.id)}" aria-label="Перейти к информационной полосе: ${escapeAttr(caseData.name)}">
+            <span class="upcoming-summary-date">${formatRuDateTime(hearing.date)}</span>
+            <span class="upcoming-summary-case">${escapeHtml(caseData.name)}</span>
+            <span class="upcoming-summary-note"><b>Заседание прошло.</b> Новая дата не назначена.</span>
+          </button>
+          <span class="upcoming-summary-court">
+            <span>${escapeHtml(caseData.court || 'Суд не указан')}</span>
+            ${courtSiteLinkHtml(caseData, true)}
+          </span>
+        </div>
+      `).join('')}
+    </div>
+  </section>`;
+
+  container.querySelectorAll('[data-court-info-target]').forEach(row => {
+    row.addEventListener('click', () => window.scrollToCourtInfoById(row.dataset.courtInfoTarget));
+  });
+  container.querySelectorAll('[data-court-site-link]').forEach(link => {
+    link.addEventListener('click', event => event.stopPropagation());
+    link.addEventListener('keydown', event => event.stopPropagation());
+  });
 }
 window.scrollToCourtInfoById = function(id){
   const card = [...document.querySelectorAll('.court-card[data-court-info-id]')]
