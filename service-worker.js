@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dostup-pwa-v2';
+const CACHE_NAME = 'dostup-pwa-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -7,11 +7,11 @@ const APP_SHELL = [
   './firebase-config.js',
   './seed-data.js',
   './court-update-config.js',
-  './manifest.json?v=1',
-  './favicon-gas-v2.png?v=3.9',
-  './pwa-icon-180.png?v=1',
-  './pwa-icon-192.png',
-  './pwa-icon-512.png'
+  './manifest.json?v=2',
+  './app-icon-beige-v1.png?v=1',
+  './pwa-icon-180.png?v=2',
+  './pwa-icon-192.png?v=2',
+  './pwa-icon-512.png?v=2'
 ];
 
 self.addEventListener('install', event => {
