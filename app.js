@@ -929,12 +929,12 @@ function normalizedHearings(hearings){
     });
 }
 
-function courtUpdateHearingDiff(c, fetchedHearings){
+function courtUpdateHearingDiff(c, fetched={}){
   const beforeHearings = normalizedHearings(hearingsOf(c));
   const cutoff = todayLocalIso();
   const pastHearings = beforeHearings.filter(h => h.date.slice(0, 10) < cutoff);
   const currentHearings = beforeHearings.filter(h => h.date.slice(0, 10) >= cutoff);
-  const sourceHearings = normalizedHearings(fetchedHearings);
+  const sourceHearings = normalizedHearings(fetched.hearings);
   const byDate = new Map(currentHearings.map(h => [h.date, h]));
   const canTransferNotes = sourceHearings.length === currentHearings.length;
 
@@ -950,6 +950,15 @@ function courtUpdateHearingDiff(c, fetchedHearings){
   const currentDates = new Set(currentHearings.map(h => h.date));
   const added = afterCurrentHearings.filter(h => !currentDates.has(h.date));
   const removed = currentHearings.filter(h => !sourceDates.has(h.date));
+  const hearingsChanged = !deepEqual(beforeHearings, afterHearings);
+  const patch = {};
+  if(hearingsChanged) patch.hearings = afterHearings;
+  if(!String(c.caseNumber || '').trim() && String(fetched.caseNumber || '').trim()){
+    patch.caseNumber = String(fetched.caseNumber).trim();
+  }
+  if(!String(c.judge || '').trim() && String(fetched.judge || '').trim()){
+    patch.judge = String(fetched.judge).trim();
+  }
 
   return {
     id:c.id,
@@ -957,9 +966,12 @@ function courtUpdateHearingDiff(c, fetchedHearings){
     court:c.court || '',
     beforeHearings,
     afterHearings,
+    beforeCaseNumber:String(c.caseNumber || '').trim(),
+    beforeJudge:String(c.judge || '').trim(),
     added,
     removed,
-    changed:!deepEqual(beforeHearings, afterHearings)
+    patch,
+    changed:Object.keys(patch).length > 0
   };
 }
 
@@ -979,8 +991,11 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
       const removals = diff.removed.length
         ? `<div class="court-update-change court-update-remove"><b>Убрать из карточки:</b> ${diff.removed.map(h => escapeHtml(formatRuDateTime(h.date))).join(', ')}</div>`
         : '';
-      const onlyReordered = !additions && !removals
-        ? '<div class="court-update-change">Обновится порядок сохранённых заседаний.</div>'
+      const caseNumber = diff.patch.caseNumber
+        ? `<div class="court-update-change court-update-fill"><b>Заполнить номер дела:</b> ${escapeHtml(diff.patch.caseNumber)}</div>`
+        : '';
+      const judge = diff.patch.judge
+        ? `<div class="court-update-change court-update-fill"><b>Заполнить судью:</b> ${escapeHtml(diff.patch.judge)}</div>`
         : '';
       return `<article class="court-update-case">
         <label class="court-update-case-head">
@@ -988,7 +1003,7 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
           <span><b>${escapeHtml(diff.name)}</b></span>
         </label>
         ${diff.court ? `<p>${escapeHtml(diff.court)}</p>` : ''}
-        ${additions}${removals}${onlyReordered}
+        ${additions}${removals}${caseNumber}${judge}
       </article>`;
     }).join(''));
   }else if(checked){
@@ -1092,7 +1107,7 @@ async function requestCourtHearingUpdates(){
         errors.push({ name:c.name, message:result.message || 'не удалось прочитать страницу суда' });
         return;
       }
-      const diff = courtUpdateHearingDiff(c, result.hearings);
+      const diff = courtUpdateHearingDiff(c, result);
       if(diff.changed) diffs.push(diff);
     });
 
@@ -1123,7 +1138,10 @@ courtUpdateApplyButton.addEventListener('click', async event => {
   if(!selectedDiffs.length) return;
   const stale = selectedDiffs.find(diff => {
     const current = COURT.find(c => c.id === diff.id);
-    return !current || !deepEqual(normalizedHearings(hearingsOf(current)), diff.beforeHearings);
+    return !current
+      || !deepEqual(normalizedHearings(hearingsOf(current)), diff.beforeHearings)
+      || String(current.caseNumber || '').trim() !== diff.beforeCaseNumber
+      || String(current.judge || '').trim() !== diff.beforeJudge;
   });
   if(stale){
     showToast(`Карточка «${stale.name}» изменилась во время проверки. Запустите сверку ещё раз.`, 'error');
@@ -1136,15 +1154,15 @@ courtUpdateApplyButton.addEventListener('click', async event => {
       const before = recordData(current);
       return {
         collection:'courtCases', docId:current.id, label:current.name,
-        before, after:{ ...before, hearings:diff.afterHearings }
+        before, after:{ ...before, ...diff.patch }
       };
     });
     await commitOperation(batch => {
       selectedDiffs.forEach(diff => {
-        batch.update(doc(db, 'courtCases', diff.id), { hearings:diff.afterHearings });
+        batch.update(doc(db, 'courtCases', diff.id), diff.patch);
       });
     }, {
-      text:`Сверка с сайтами судов: обновлены заседания по делам — ${selectedDiffs.length}.`,
+      text:`Сверка с сайтами судов: обновлены сведения по делам — ${selectedDiffs.length}.`,
       action:'court.hearing_sync', items,
       meta:{ source:'court-sites', confirmed:true }
     });

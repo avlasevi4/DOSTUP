@@ -86,6 +86,23 @@ export function extractUpcomingHearings(html){
   return hearings.sort((a,b) => a.date.localeCompare(b.date));
 }
 
+export function extractCaseMetadata(html){
+  const source = String(html || '');
+  const caseBlock = source.match(/<div\b[^>]*\bclass\s*=\s*(?:['"]casenumber['"]|casenumber)(?=\s|>|\/)[^>]*>([\s\S]*?)<\/div>/i)?.[1] || '';
+  const caseNumber = htmlText(caseBlock).replace(/^дело\s*№?\s*/i, '').trim();
+
+  let judge = '';
+  const rows = source.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi);
+  for(const row of rows){
+    const cells = [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell => htmlText(cell[1]));
+    if(cells.length >= 2 && /^судья\s*$/i.test(cells[0])){
+      judge = String(cells[1] || '').trim();
+      break;
+    }
+  }
+  return { caseNumber, judge };
+}
+
 async function fetchWithTimeout(url){
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -129,7 +146,8 @@ async function checkCase(input){
     if(!response.ok) return { id, status:'error', message:`страница суда вернула HTTP ${response.status}` };
     const html = await readCourtHtml(response);
     const hearings = extractUpcomingHearings(html);
-    return { id, name, status:'ok', hearings, checkedAt:new Date().toISOString() };
+    const { caseNumber, judge } = extractCaseMetadata(html);
+    return { id, name, status:'ok', hearings, caseNumber, judge, checkedAt:new Date().toISOString() };
   }catch(error){
     const timeout = error?.name === 'AbortError';
     return { id, status:'error', message:timeout ? 'страница суда не ответила за 25 секунд' : 'не удалось загрузить страницу суда' };
