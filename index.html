@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4.8" />
+<link rel="stylesheet" href="styles.css?v=4.9" />
 <link rel="icon" type="image/png" href="favicon-gas-v2.png?v=3.9" />
 <link rel="shortcut icon" href="favicon-gas-v2.png?v=3.9" />
 </head>
@@ -62,7 +62,10 @@
     <section id="tab-court" class="tab-panel active">
       <div class="panel-head">
         <h2>Судебное производство</h2>
-        <button id="add-court-btn" class="btn-primary">+ Дело в производстве</button>
+        <div class="panel-head-actions">
+          <button id="court-update-btn" class="btn-court-update" type="button">↻ Обновить даты</button>
+          <button id="add-court-btn" class="btn-primary">+ Дело в производстве</button>
+        </div>
       </div>
       <div class="summary-strip" id="court-summary-strip"></div>
       <div id="court-list"></div>
@@ -171,8 +174,32 @@
   </div>
 </div>
 
+<!-- ===== МОДАЛЬНОЕ ОКНО: ОБНОВЛЕНИЕ ДАТ ЗАСЕДАНИЙ ===== -->
+<div id="court-update-backdrop" class="modal-backdrop" aria-hidden="true">
+  <div class="modal court-update-modal" role="dialog" aria-modal="true" aria-labelledby="court-update-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="court-update-title">Обновление дат заседаний</h3>
+        <p class="court-update-subtitle">Даты сверяются со страницами дел на сайтах судов. Изменения попадут в карточки только после подтверждения.</p>
+      </div>
+      <button id="court-update-close" class="modal-close" type="button" aria-label="Закрыть">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="court-update-status" class="court-update-status" role="status"></div>
+      <div id="court-update-preview" class="court-update-preview"></div>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div class="modal-foot-right">
+        <button id="court-update-cancel" class="btn-ghost btn-ghost-light" type="button">Отмена</button>
+        <button id="court-update-apply" class="btn-primary" type="button" hidden>Применить изменения</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 
-<script type="module" src="app.js?v=4.8"></script>
+<script type="module" src="app.js?v=4.9"></script>
 </body>
 </html>
