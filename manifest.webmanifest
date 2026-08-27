@@ -1,0 +1,27 @@
+{
+  "id": "/DOSTUP/",
+  "name": "Реестр дел — обеспечение доступа",
+  "short_name": "Реестр дел",
+  "description": "Рабочий реестр исков и судебного производства.",
+  "lang": "ru",
+  "start_url": "/DOSTUP/",
+  "scope": "/DOSTUP/",
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "background_color": "#EFECE2",
+  "theme_color": "#1E2A3A",
+  "icons": [
+    {
+      "src": "/DOSTUP/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/DOSTUP/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

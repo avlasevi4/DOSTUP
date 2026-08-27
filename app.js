@@ -84,6 +84,56 @@ function tryUnlock(){
 document.getElementById('gate-submit').addEventListener('click', tryUnlock);
 gateInput.addEventListener('keydown', e => { if(e.key === 'Enter') tryUnlock(); });
 
+/* ---------------------------------------------------------------------------
+   PWA: установка отдельного приложения и офлайн-оболочка
+--------------------------------------------------------------------------- */
+let deferredInstallPrompt = null;
+const pwaInstallButton = document.getElementById('pwa-install-btn');
+
+function isStandalonePwa(){
+  return window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+function isIosDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function setupPwa(){
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js', { scope:'./' })
+        .catch(err => console.warn('Не удалось включить офлайн-режим приложения', err));
+    }, { once:true });
+  }
+
+  if(!pwaInstallButton || isStandalonePwa()) return;
+  if(isIosDevice()) pwaInstallButton.hidden = false;
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    pwaInstallButton.hidden = false;
+  });
+
+  pwaInstallButton.addEventListener('click', async () => {
+    if(deferredInstallPrompt){
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if(choice.outcome === 'accepted') pwaInstallButton.hidden = true;
+      return;
+    }
+    if(isIosDevice()){
+      showToast('В Safari нажмите «Поделиться» → «На экран „Домой“». После этого реестр откроется отдельным приложением без адресной строки.', 'info');
+    }else{
+      showToast('Откройте меню браузера и выберите «Установить приложение» или «Добавить на главный экран».', 'info');
+    }
+  });
+}
+
+setupPwa();
+
 if(sessionStorage.getItem('gmi-unlocked') === '1'){
   applyRole(sessionStorage.getItem('gmi-role') || 'staff');
   gate.hidden = true;
