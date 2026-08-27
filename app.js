@@ -19,6 +19,7 @@ let BACKUPS = [];
 let modalHearings = [];   // временный список заседаний, пока открыта карточка судопроизводства
 let importDiffs = [];     // изменения, посчитанные при предпросмотре импорта
 let courtUpdateDiffs = []; // изменения заседаний, полученные от сайта суда до подтверждения
+let courtUpdateMode = 'hearings';
 let bootStarted = false;
 let lastFocusedElement = null;
 const listenerReady = { cases:false, court:false, logs:false };
@@ -908,10 +909,13 @@ window.scrollToCourtInfoById = function(id){
    СВЕРКА ДАТ С САЙТАМИ СУДОВ
 --------------------------------------------------------------------------- */
 const courtUpdateBackdrop = document.getElementById('court-update-backdrop');
+const courtUpdateTitle = document.getElementById('court-update-title');
+const courtUpdateSubtitle = document.getElementById('court-update-subtitle');
 const courtUpdateStatus = document.getElementById('court-update-status');
 const courtUpdatePreview = document.getElementById('court-update-preview');
 const courtUpdateApplyButton = document.getElementById('court-update-apply');
-const courtUpdateButton = document.getElementById('court-update-btn');
+const courtHearingUpdateButton = document.getElementById('court-hearing-update-btn');
+const courtDetailsUpdateButton = document.getElementById('court-details-update-btn');
 
 function normalizedHearings(hearings){
   const seen = new Set();
@@ -957,19 +961,12 @@ function courtUpdateHearingDiff(c, fetched={}){
   const hearingsChanged = !deepEqual(beforeHearings, afterHearings);
   const patch = {};
   if(hearingsChanged) patch.hearings = afterHearings;
-  const currentCaseNumber = mainCaseNumber(c.caseNumber);
-  const fetchedCaseNumber = mainCaseNumber(fetched.caseNumber);
-  if(fetchedCaseNumber && currentCaseNumber !== fetchedCaseNumber){
-    patch.caseNumber = fetchedCaseNumber;
-  }
-  if(!String(c.judge || '').trim() && String(fetched.judge || '').trim()){
-    patch.judge = String(fetched.judge).trim();
-  }
 
   return {
     id:c.id,
     name:c.name,
     court:c.court || '',
+    kind:'hearings',
     beforeHearings,
     afterHearings,
     beforeCaseNumber:String(c.caseNumber || '').trim(),
@@ -977,6 +974,27 @@ function courtUpdateHearingDiff(c, fetched={}){
     added,
     removed,
     patch,
+    changed:Object.keys(patch).length > 0
+  };
+}
+
+function courtUpdateDetailsDiff(c, fetched={}){
+  const beforeCaseNumber = String(c.caseNumber || '').trim();
+  const beforeJudge = String(c.judge || '').trim();
+  const currentCaseNumber = mainCaseNumber(beforeCaseNumber);
+  const fetchedCaseNumber = mainCaseNumber(fetched.caseNumber);
+  const patch = {};
+  if(fetchedCaseNumber && currentCaseNumber !== fetchedCaseNumber){
+    patch.caseNumber = fetchedCaseNumber;
+  }
+  if(!beforeJudge && String(fetched.judge || '').trim()){
+    patch.judge = String(fetched.judge).trim();
+  }
+  const currentHearings = normalizedHearings(hearingsOf(c));
+  return {
+    id:c.id, name:c.name, court:c.court || '', kind:'details',
+    beforeHearings:currentHearings, afterHearings:currentHearings,
+    beforeCaseNumber, beforeJudge, added:[], removed:[], patch,
     changed:Object.keys(patch).length > 0
   };
 }
@@ -1063,7 +1081,7 @@ function closeCourtUpdate(){
   courtUpdateDiffs = [];
 }
 
-async function requestCourtHearingUpdates(){
+async function requestCourtUpdates(mode){
   if(!listenerReady.court){
     showToast('Дождитесь загрузки судебного производства.', 'info');
     return;
@@ -1072,6 +1090,14 @@ async function requestCourtHearingUpdates(){
     showToast('Сервис проверки дат ещё не подключён.', 'info');
     return;
   }
+
+  courtUpdateMode = mode;
+  const isHearingsMode = mode === 'hearings';
+  const triggerButton = isHearingsMode ? courtHearingUpdateButton : courtDetailsUpdateButton;
+  courtUpdateTitle.textContent = isHearingsMode ? 'Обновление дат заседаний' : 'Обновление карточек дел';
+  courtUpdateSubtitle.textContent = isHearingsMode
+    ? 'Даты сверяются со страницами дел на сайтах судов. Изменения попадут в карточки только после подтверждения.'
+    : 'Номер дела будет предложен, если он пустой или не совпадает; судья — только если это поле пустое.';
 
   const casesToCheck = COURT
     .filter(c => !isCompletedCourtCase(c))
@@ -1086,9 +1112,9 @@ async function requestCourtHearingUpdates(){
   openBackdrop(courtUpdateBackdrop, '#court-update-close');
   courtUpdateApplyButton.hidden = true;
   courtUpdatePreview.innerHTML = '';
-  courtUpdateStatus.textContent = `Проверяем страницы дел: ${casesToCheck.length}…`;
+  courtUpdateStatus.textContent = `${isHearingsMode ? 'Проверяем даты заседаний' : 'Проверяем сведения карточек'}: ${casesToCheck.length}…`;
   courtUpdateStatus.className = 'court-update-status is-loading';
-  courtUpdateButton.disabled = true;
+  triggerButton.disabled = true;
 
   let timeoutId;
   try{
@@ -1113,7 +1139,7 @@ async function requestCourtHearingUpdates(){
         errors.push({ name:c.name, message:result.message || 'не удалось прочитать страницу суда' });
         return;
       }
-      const diff = courtUpdateHearingDiff(c, result);
+      const diff = isHearingsMode ? courtUpdateHearingDiff(c, result) : courtUpdateDetailsDiff(c, result);
       if(diff.changed) diffs.push(diff);
     });
 
@@ -1131,11 +1157,12 @@ async function requestCourtHearingUpdates(){
     renderCourtUpdatePreview();
   }finally{
     if(timeoutId) clearTimeout(timeoutId);
-    courtUpdateButton.disabled = false;
+    triggerButton.disabled = false;
   }
 }
 
-courtUpdateButton.addEventListener('click', requestCourtHearingUpdates);
+courtHearingUpdateButton.addEventListener('click', () => requestCourtUpdates('hearings'));
+courtDetailsUpdateButton.addEventListener('click', () => requestCourtUpdates('details'));
 document.getElementById('court-update-close').addEventListener('click', closeCourtUpdate);
 document.getElementById('court-update-cancel').addEventListener('click', closeCourtUpdate);
 
@@ -1144,10 +1171,12 @@ courtUpdateApplyButton.addEventListener('click', async event => {
   if(!selectedDiffs.length) return;
   const stale = selectedDiffs.find(diff => {
     const current = COURT.find(c => c.id === diff.id);
-    return !current
-      || !deepEqual(normalizedHearings(hearingsOf(current)), diff.beforeHearings)
-      || String(current.caseNumber || '').trim() !== diff.beforeCaseNumber
-      || String(current.judge || '').trim() !== diff.beforeJudge;
+    if(!current) return true;
+    if(diff.kind === 'hearings'){
+      return !deepEqual(normalizedHearings(hearingsOf(current)), diff.beforeHearings);
+    }
+    return (diff.patch.caseNumber !== undefined && String(current.caseNumber || '').trim() !== diff.beforeCaseNumber)
+      || (diff.patch.judge !== undefined && String(current.judge || '').trim() !== diff.beforeJudge);
   });
   if(stale){
     showToast(`Карточка «${stale.name}» изменилась во время проверки. Запустите сверку ещё раз.`, 'error');
@@ -1168,9 +1197,9 @@ courtUpdateApplyButton.addEventListener('click', async event => {
         batch.update(doc(db, 'courtCases', diff.id), diff.patch);
       });
     }, {
-      text:`Сверка с сайтами судов: обновлены сведения по делам — ${selectedDiffs.length}.`,
-      action:'court.hearing_sync', items,
-      meta:{ source:'court-sites', confirmed:true }
+      text:`Сверка с сайтами судов: обновлены ${courtUpdateMode === 'hearings' ? 'даты заседаний' : 'сведения карточек'} по делам — ${selectedDiffs.length}.`,
+      action:courtUpdateMode === 'hearings' ? 'court.hearing_sync' : 'court.details_sync', items,
+      meta:{ source:'court-sites', confirmed:true, mode:courtUpdateMode }
     });
     const count = selectedDiffs.length;
     closeCourtUpdate();
@@ -1223,6 +1252,7 @@ function logActionLabel(action){
   return ({
     'case.update':'Изменение дела', 'case.create':'Добавление должника', 'case.delete':'Удаление должника',
     'court.update':'Изменение судопроизводства', 'court.create':'Добавление в судопроизводство', 'court.delete':'Удаление из судопроизводства',
+    'court.hearing_sync':'Обновление дат заседаний', 'court.details_sync':'Обновление карточек дел',
     'import':'Массовый импорт', 'backup.restore':'Восстановление копии', 'undo':'Отмена операции',
     'system.migration':'Системная сверка данных', 'note':'Заметка'
   })[action] || 'Изменение';
