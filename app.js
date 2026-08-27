@@ -610,6 +610,24 @@ function nearestUpcomingHearingOf(c){
     .sort((a,b) => a.dt - b.dt)[0]?.hearing || null;
 }
 
+// Дело требует внимания, если последнее назначенное заседание уже прошло,
+// а следующей даты в карточке ещё нет.
+function latestPassedHearingAwaitingUpdateOf(c){
+  if(isCompletedCourtCase(c) || nearestUpcomingHearingOf(c)) return null;
+  const now = new Date();
+  return hearingsOf(c)
+    .map(h => ({ hearing:h, dt:hearingDateObject(h?.date) }))
+    .filter(x => x.dt && x.dt < now)
+    .sort((a,b) => b.dt - a.dt)[0]?.hearing || null;
+}
+
+function courtCasesAwaitingHearingDate(){
+  return COURT
+    .filter(c => !isCompletedCourtCase(c))
+    .map(c => ({ caseData:c, hearing:latestPassedHearingAwaitingUpdateOf(c) }))
+    .filter(item => item.hearing);
+}
+
 function compareCourtCases(a,b){
   const aCompleted = isCompletedCourtCase(a);
   const bCompleted = isCompletedCourtCase(b);
@@ -621,6 +639,9 @@ function compareCourtCases(a,b){
     const aTime = hearingDateObject(aNext?.date)?.getTime() ?? Number.POSITIVE_INFINITY;
     const bTime = hearingDateObject(bNext?.date)?.getTime() ?? Number.POSITIVE_INFINITY;
     if(aTime !== bTime) return aTime - bTime;
+    const aAwaiting = !!latestPassedHearingAwaitingUpdateOf(a);
+    const bAwaiting = !!latestPassedHearingAwaitingUpdateOf(b);
+    if(aAwaiting !== bAwaiting) return aAwaiting ? -1 : 1;
   }else{
     const aTime = hearingDateObject(latestHearingOf(a)?.date)?.getTime() ?? Number.NEGATIVE_INFINITY;
     const bTime = hearingDateObject(latestHearingOf(b)?.date)?.getTime() ?? Number.NEGATIVE_INFINITY;
@@ -752,6 +773,7 @@ let courtInfoHighlightTimer = null;
 
 function renderCourt(){
   const el = document.getElementById('court-list');
+  renderCourtHearingWarning();
   if(COURT.length === 0){
     el.innerHTML = `<p style="color:var(--ink-soft)">Пока нет дел в судебном производстве — появятся здесь, как только иск будет направлен в суд.</p>`;
     return;
@@ -760,7 +782,8 @@ function renderCourt(){
   COURT.slice().sort(compareCourtCases).forEach(c => {
     const card = document.createElement('div');
     const completed = isCompletedCourtCase(c);
-    card.className = `court-card${completed ? ' court-card-completed' : ''}`;
+    const awaitingDate = !completed ? latestPassedHearingAwaitingUpdateOf(c) : null;
+    card.className = `court-card${completed ? ' court-card-completed' : ''}${awaitingDate ? ' court-card-awaiting-date' : ''}`;
     card.dataset.courtInfoId = c.id;
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
@@ -769,7 +792,7 @@ function renderCourt(){
     const decisionDate = completed ? courtDecisionDateOf(c) : '';
     const hearingText = completed
       ? `${courtOutcomeLabel(c)} · решение${decisionDate ? ' от '+formatRuDate(decisionDate) : ': дата не указана'}`
-      : (nh ? formatRuDateTime(nh.date) : 'не назначено');
+      : (nh ? formatRuDateTime(nh.date) : (awaitingDate ? `заседание прошло ${formatRuDateTime(awaitingDate.date)}` : 'не назначено'));
     const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
@@ -782,6 +805,7 @@ function renderCourt(){
       </div>
       <div class="court-hearing">
         <b>${hearingText}</b>
+        ${awaitingDate ? '<div class="court-hearing-awaiting">Новая дата не назначена — проверьте сведения на сайте суда.</div>' : ''}
         ${nh ? `<div class="court-preparation"><span>Подготовить:</span> ${escapeHtml(preparation || 'не указано')}</div>` : ''}
         ${c.judge ? `<div class="court-judge">Судья: ${escapeHtml(c.judge)}</div>` : ''}
       </div>
@@ -848,6 +872,20 @@ function renderCourtSummary(){
     link.addEventListener('click', event => event.stopPropagation());
     link.addEventListener('keydown', event => event.stopPropagation());
   });
+}
+
+function renderCourtHearingWarning(){
+  const warning = document.getElementById('court-hearings-warning');
+  if(!warning) return;
+  const awaiting = courtCasesAwaitingHearingDate();
+  if(!awaiting.length){
+    warning.hidden = true;
+    warning.textContent = '';
+    return;
+  }
+  warning.hidden = false;
+  const items = awaiting.map(({caseData, hearing}) => `${caseData.name} (${formatRuDate(hearing.date)})`);
+  warning.textContent = `⚠ Новая дата не назначена после заседания: ${items.join(', ')}.`;
 }
 window.scrollToCourtInfoById = function(id){
   const card = [...document.querySelectorAll('.court-card[data-court-info-id]')]
@@ -926,13 +964,15 @@ function courtUpdateHearingDiff(c, fetchedHearings){
 }
 
 function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked=0 }={}){
-  courtUpdateDiffs = diffs;
-  courtUpdateApplyButton.hidden = diffs.length === 0;
+  courtUpdateDiffs = diffs.map(diff => ({ ...diff, selected:diff.selected !== false }));
 
   const lines = [];
-  if(diffs.length){
-    lines.push(`<p class="court-update-result-summary">Найдено изменений: <b>${diffs.length}</b>. Проверьте их перед применением.</p>`);
-    lines.push(diffs.map(diff => {
+  if(courtUpdateDiffs.length){
+    lines.push(`<div class="court-update-selection-head">
+      <p class="court-update-result-summary">Найдено изменений: <b>${courtUpdateDiffs.length}</b>. Отметьте только те дела, которые нужно обновить.</p>
+      <label class="court-update-select-all"><input id="court-update-select-all" type="checkbox" checked> Выбрать все</label>
+    </div>`);
+    lines.push(courtUpdateDiffs.map(diff => {
       const additions = diff.added.length
         ? `<div class="court-update-change court-update-add"><b>Добавить:</b> ${diff.added.map(h => escapeHtml(formatRuDateTime(h.date))).join(', ')}</div>`
         : '';
@@ -943,7 +983,10 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
         ? '<div class="court-update-change">Обновится порядок сохранённых заседаний.</div>'
         : '';
       return `<article class="court-update-case">
-        <h4>${escapeHtml(diff.name)}</h4>
+        <label class="court-update-case-head">
+          <input type="checkbox" data-court-update-select="${escapeAttr(diff.id)}" checked>
+          <span><b>${escapeHtml(diff.name)}</b></span>
+        </label>
         ${diff.court ? `<p>${escapeHtml(diff.court)}</p>` : ''}
         ${additions}${removals}${onlyReordered}
       </article>`;
@@ -961,6 +1004,37 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
     lines.push(`<p class="court-update-note">Без ссылки на дело пропущено карточек: ${withoutLinks}.</p>`);
   }
   courtUpdatePreview.innerHTML = lines.join('');
+  courtUpdatePreview.querySelectorAll('[data-court-update-select]').forEach(input => {
+    input.addEventListener('change', () => {
+      const diff = courtUpdateDiffs.find(item => item.id === input.dataset.courtUpdateSelect);
+      if(diff) diff.selected = input.checked;
+      refreshCourtUpdateSelectionControls();
+    });
+  });
+  const selectAll = document.getElementById('court-update-select-all');
+  selectAll?.addEventListener('change', () => {
+    courtUpdateDiffs.forEach(diff => { diff.selected = selectAll.checked; });
+    courtUpdatePreview.querySelectorAll('[data-court-update-select]').forEach(input => { input.checked = selectAll.checked; });
+    refreshCourtUpdateSelectionControls();
+  });
+  refreshCourtUpdateSelectionControls();
+}
+
+function refreshCourtUpdateSelectionControls(){
+  const total = courtUpdateDiffs.length;
+  const selected = courtUpdateDiffs.filter(diff => diff.selected).length;
+  courtUpdateApplyButton.hidden = total === 0;
+  courtUpdateApplyButton.disabled = selected === 0;
+  if(total){
+    courtUpdateApplyButton.textContent = selected === total
+      ? `Применить все изменения (${selected})`
+      : `Применить выбранные (${selected})`;
+  }
+  const selectAll = document.getElementById('court-update-select-all');
+  if(selectAll){
+    selectAll.checked = total > 0 && selected === total;
+    selectAll.indeterminate = selected > 0 && selected < total;
+  }
 }
 
 function closeCourtUpdate(){
@@ -1045,8 +1119,9 @@ document.getElementById('court-update-close').addEventListener('click', closeCou
 document.getElementById('court-update-cancel').addEventListener('click', closeCourtUpdate);
 
 courtUpdateApplyButton.addEventListener('click', async event => {
-  if(!courtUpdateDiffs.length) return;
-  const stale = courtUpdateDiffs.find(diff => {
+  const selectedDiffs = courtUpdateDiffs.filter(diff => diff.selected);
+  if(!selectedDiffs.length) return;
+  const stale = selectedDiffs.find(diff => {
     const current = COURT.find(c => c.id === diff.id);
     return !current || !deepEqual(normalizedHearings(hearingsOf(current)), diff.beforeHearings);
   });
@@ -1056,7 +1131,7 @@ courtUpdateApplyButton.addEventListener('click', async event => {
   }
 
   await performAction(event.currentTarget, 'Применение…', async () => {
-    const items = courtUpdateDiffs.map(diff => {
+    const items = selectedDiffs.map(diff => {
       const current = COURT.find(c => c.id === diff.id);
       const before = recordData(current);
       return {
@@ -1065,15 +1140,15 @@ courtUpdateApplyButton.addEventListener('click', async event => {
       };
     });
     await commitOperation(batch => {
-      courtUpdateDiffs.forEach(diff => {
+      selectedDiffs.forEach(diff => {
         batch.update(doc(db, 'courtCases', diff.id), { hearings:diff.afterHearings });
       });
     }, {
-      text:`Сверка с сайтами судов: обновлены заседания по делам — ${courtUpdateDiffs.length}.`,
+      text:`Сверка с сайтами судов: обновлены заседания по делам — ${selectedDiffs.length}.`,
       action:'court.hearing_sync', items,
       meta:{ source:'court-sites', confirmed:true }
     });
-    const count = courtUpdateDiffs.length;
+    const count = selectedDiffs.length;
     closeCourtUpdate();
     showToast(`Изменения применены: карточек обновлено — ${count}.`, 'success');
   });
