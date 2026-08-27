@@ -929,6 +929,10 @@ function normalizedHearings(hearings){
     });
 }
 
+function mainCaseNumber(value){
+  return String(value || '').split(/[~∼〜～]/, 1)[0].trim();
+}
+
 function courtUpdateHearingDiff(c, fetched={}){
   const beforeHearings = normalizedHearings(hearingsOf(c));
   const cutoff = todayLocalIso();
@@ -953,8 +957,10 @@ function courtUpdateHearingDiff(c, fetched={}){
   const hearingsChanged = !deepEqual(beforeHearings, afterHearings);
   const patch = {};
   if(hearingsChanged) patch.hearings = afterHearings;
-  if(!String(c.caseNumber || '').trim() && String(fetched.caseNumber || '').trim()){
-    patch.caseNumber = String(fetched.caseNumber).trim();
+  const currentCaseNumber = mainCaseNumber(c.caseNumber);
+  const fetchedCaseNumber = mainCaseNumber(fetched.caseNumber);
+  if(fetchedCaseNumber && currentCaseNumber !== fetchedCaseNumber){
+    patch.caseNumber = fetchedCaseNumber;
   }
   if(!String(c.judge || '').trim() && String(fetched.judge || '').trim()){
     patch.judge = String(fetched.judge).trim();
@@ -992,7 +998,7 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
         ? `<div class="court-update-change court-update-remove"><b>Убрать из карточки:</b> ${diff.removed.map(h => escapeHtml(formatRuDateTime(h.date))).join(', ')}</div>`
         : '';
       const caseNumber = diff.patch.caseNumber
-        ? `<div class="court-update-change court-update-fill"><b>Заполнить номер дела:</b> ${escapeHtml(diff.patch.caseNumber)}</div>`
+        ? `<div class="court-update-change court-update-fill"><b>${diff.beforeCaseNumber ? 'Исправить' : 'Заполнить'} номер дела:</b> ${escapeHtml(diff.patch.caseNumber)}</div>`
         : '';
       const judge = diff.patch.judge
         ? `<div class="court-update-change court-update-fill"><b>Заполнить судью:</b> ${escapeHtml(diff.patch.judge)}</div>`

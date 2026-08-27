@@ -65,6 +65,10 @@ function toIsoDateTime(dateText, timeText){
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+function mainCaseNumber(value){
+  return String(value || '').split(/[~∼〜～]/, 1)[0].trim();
+}
+
 export function extractUpcomingHearings(html){
   const movement = String(html || '').match(/<div\b[^>]*\bid\s*=\s*['"]cont2['"][^>]*>[\s\S]*?<table\b[^>]*>([\s\S]*?)<\/table>/i)?.[1];
   if(!movement) throw new Error('На странице не найдена таблица «Движение дела».');
@@ -75,7 +79,7 @@ export function extractUpcomingHearings(html){
   const rows = movement.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi);
   for(const row of rows){
     const cells = [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell => htmlText(cell[1]));
-    if(cells.length < 3 || !/^судебное\s+заседание(?:\s|$)/i.test(cells[0])) continue;
+    if(cells.length < 3 || !/^(?:предварительное\s+)?судебное\s+заседание\s*$/i.test(cells[0])) continue;
     // В заполненной графе «Результат события» уже состоявшееся заседание.
     if(String(cells[4] || '').trim()) continue;
     const date = toIsoDateTime(cells[1], cells[2]);
@@ -89,7 +93,7 @@ export function extractUpcomingHearings(html){
 export function extractCaseMetadata(html){
   const source = String(html || '');
   const caseBlock = source.match(/<div\b[^>]*\bclass\s*=\s*(?:['"]casenumber['"]|casenumber)(?=\s|>|\/)[^>]*>([\s\S]*?)<\/div>/i)?.[1] || '';
-  const caseNumber = htmlText(caseBlock).replace(/^дело\s*№?\s*/i, '').trim();
+  const caseNumber = mainCaseNumber(htmlText(caseBlock).replace(/^дело\s*№?\s*/i, ''));
 
   let judge = '';
   const rows = source.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi);
