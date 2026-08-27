@@ -124,18 +124,25 @@ async function fetchWithTimeout(url){
 async function readCourtHtml(response){
   const bytes = await response.arrayBuffer();
   const charset = response.headers.get('content-type')?.match(/charset\s*=\s*([\w-]+)/i)?.[1]?.toLowerCase();
-  const encodings = [...new Set([charset, 'utf-8', 'windows-1251'].filter(Boolean))];
-  for(const encoding of encodings){
+  // Суды обычно явно присылают windows-1251. Это указание надёжнее
+  // эвристики по наличию заседаний: у завершённого или перенесённого дела
+  // подходящей строки может не быть, но реквизиты всё равно должны читаться
+  // в правильной кодировке.
+  if(charset){
     try{
-      const html = new TextDecoder(encoding).decode(bytes);
-      if(/судебное\s+заседание/i.test(html)) return html;
+      return new TextDecoder(charset).decode(bytes);
     }catch(_err){
-      // Если кодировка не поддерживается средой, пробуем следующую.
+      // Если сервер указал неподдерживаемую кодировку, применяем резервный вариант.
     }
   }
-  // Возвращаем наиболее вероятный вариант, чтобы вызывающий код дал понятную ошибку
-  // об отсутствующей таблице, а не об ошибке декодирования.
-  return new TextDecoder('utf-8').decode(bytes);
+
+  const utf8 = new TextDecoder('utf-8').decode(bytes);
+  if(/[А-Яа-яЁё]/.test(utf8)) return utf8;
+  try{
+    return new TextDecoder('windows-1251').decode(bytes);
+  }catch(_err){
+    return utf8;
+  }
 }
 
 async function checkCase(input){
