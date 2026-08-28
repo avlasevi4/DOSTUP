@@ -23,6 +23,8 @@ let courtUpdateMode = 'hearings';
 let courtUpdateSource = 'manual';
 let pendingCourtAutoUpdate = null;
 let autoUpdatePromptTimer = 0;
+let courtUpdateAudioContext = null;
+let courtUpdateAudioUnlocked = false;
 let bootStarted = false;
 let lastFocusedElement = null;
 const listenerReady = { cases:false, court:false, logs:false };
@@ -1059,11 +1061,45 @@ function formatScheduledCheckTime(value){
 
 function updateCourtAutoUpdateBell(){
   if(!courtUpdateBell || !courtUpdateBellCount) return;
-  const count = new Set((pendingCourtAutoUpdate?.changes || []).map(diff => diff.id)).size;
+  const count = (pendingCourtAutoUpdate?.changes || []).length;
   courtUpdateBell.hidden = count === 0;
   courtUpdateBell.classList.toggle('is-attention', count > 0);
   courtUpdateBellCount.textContent = count > 99 ? '99+' : String(count);
   courtUpdateBell.setAttribute('aria-label', `Есть неприменённые изменения с сайтов судов: ${count}`);
+}
+
+// Браузеры разрешают звук только после первого действия пользователя. После него
+// короткий сигнал сможет сопровождать новые результаты фоновой проверки.
+function unlockCourtUpdateAudio(){
+  if(courtUpdateAudioUnlocked) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if(!AudioContextClass) return;
+  try{
+    courtUpdateAudioContext = new AudioContextClass();
+    courtUpdateAudioContext.resume?.();
+    courtUpdateAudioUnlocked = true;
+  }catch(_err){ /* Визуальное уведомление продолжит работать без звука. */ }
+}
+
+function playCourtUpdateChime(){
+  if(!courtUpdateAudioUnlocked || !courtUpdateAudioContext) return;
+  try{
+    const context = courtUpdateAudioContext;
+    context.resume?.();
+    const start = context.currentTime + .03;
+    [784, 988, 784].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, start + index * .13);
+      gain.gain.setValueAtTime(.0001, start + index * .13);
+      gain.gain.exponentialRampToValueAtTime(.085, start + index * .13 + .015);
+      gain.gain.exponentialRampToValueAtTime(.0001, start + index * .13 + .16);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(start + index * .13);
+      oscillator.stop(start + index * .13 + .18);
+    });
+  }catch(_err){ /* Звук — дополнительный канал, он не должен мешать уведомлению. */ }
 }
 
 function queueCourtAutoUpdatePrompt(){
@@ -1073,7 +1109,7 @@ function queueCourtAutoUpdatePrompt(){
     autoUpdatePromptTimer = 0;
     if(!pendingCourtAutoUpdate || isScheduledUpdateDeferred()) return;
     if(courtUpdateBackdrop.classList.contains('open') || document.getElementById('modal-backdrop')?.classList.contains('open')) return;
-    openScheduledCourtUpdate();
+    openScheduledCourtUpdate(true);
   }, 450);
 }
 
@@ -1220,7 +1256,7 @@ function refreshCourtUpdateSelectionControls(){
   }
 }
 
-function openScheduledCourtUpdate(){
+function openScheduledCourtUpdate(announce=false){
   if(!pendingCourtAutoUpdate?.changes?.length) return;
   courtUpdateSource = 'scheduled';
   courtUpdateMode = 'scheduled';
@@ -1237,6 +1273,7 @@ function openScheduledCourtUpdate(){
     checked:pendingCourtAutoUpdate.checkedCount || 0
   });
   openBackdrop(courtUpdateBackdrop, '#court-update-close');
+  if(announce) playCourtUpdateChime();
 }
 
 async function resolveScheduledCourtUpdateChanges(diffs){
@@ -1421,6 +1458,8 @@ async function requestCourtUpdates(mode){
 courtHearingUpdateButton.addEventListener('click', () => requestCourtUpdates('hearings'));
 courtDetailsUpdateButton.addEventListener('click', () => requestCourtUpdates('details'));
 courtUpdateBell.addEventListener('click', openScheduledCourtUpdate);
+document.addEventListener('pointerdown', unlockCourtUpdateAudio, { once:true, passive:true });
+document.addEventListener('keydown', unlockCourtUpdateAudio, { once:true });
 document.getElementById('court-update-close').addEventListener('click', closeCourtUpdate);
 courtUpdateCancelButton.addEventListener('click', closeCourtUpdate);
 

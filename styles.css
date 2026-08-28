@@ -102,7 +102,7 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
   display:grid; place-items:center; border-radius:999px; background:#fff; color:var(--stamp-red);
   border:1px solid #D9A09A; font-family:var(--font-mono); font-size:10px; font-weight:600;
 }
-.court-update-bell.is-attention .court-update-bell-icon{ animation:court-update-bell-ring 18s ease-in-out infinite; }
+.court-update-bell.is-attention .court-update-bell-icon{ animation:court-update-bell-ring 10s ease-in-out infinite; }
 @keyframes court-update-bell-ring{
   0%,3%,100%{ transform:rotate(0); }
   .5%,1.5%,2.5%{ transform:rotate(-12deg); }
