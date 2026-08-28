@@ -90,6 +90,24 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .masthead-sub{ font-family:var(--font-mono); font-size:12.5px; color:#8FA3BD; margin:8px 0 0; }
 
 .masthead-actions{ display:flex; gap:10px; flex:none; flex-wrap:wrap; justify-content:flex-end; }
+.court-update-bell{
+  position:relative; width:38px; min-width:38px; height:38px; padding:0;
+  border:1px solid #C26B61; border-radius:50%; background:rgba(155,50,38,.22); color:#fff;
+  display:inline-grid; place-items:center; box-shadow:0 0 0 3px rgba(155,50,38,.12);
+}
+.court-update-bell:hover{ background:rgba(155,50,38,.38); }
+.court-update-bell-icon{ width:18px; height:18px; transform-origin:50% 10%; }
+.court-update-bell-count{
+  position:absolute; top:-6px; right:-7px; min-width:18px; height:18px; padding:0 4px;
+  display:grid; place-items:center; border-radius:999px; background:#fff; color:var(--stamp-red);
+  border:1px solid #D9A09A; font-family:var(--font-mono); font-size:10px; font-weight:600;
+}
+.court-update-bell.is-attention .court-update-bell-icon{ animation:court-update-bell-ring 18s ease-in-out infinite; }
+@keyframes court-update-bell-ring{
+  0%,3%,100%{ transform:rotate(0); }
+  .5%,1.5%,2.5%{ transform:rotate(-12deg); }
+  1%,2%{ transform:rotate(12deg); }
+}
 .pwa-install-btn{ border-color:#7189A9; color:#F0F5FB; }
 .pwa-install-btn:hover{ background:#38516E; }
 .btn-ghost{
@@ -657,7 +675,7 @@ button:disabled{ cursor:wait; opacity:.65; }
   to{ background-position:-80% 0; }
 }
 @media (prefers-reduced-motion:reduce){
-  .court-update-progress-bar{ animation:none; transition-duration:.01ms; }
+  .court-update-progress-bar,.court-update-bell-icon{ animation:none; transition-duration:.01ms; }
 }
 .court-update-result-summary{ margin:0 0 10px; color:var(--ink); }
 .court-update-selection-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }

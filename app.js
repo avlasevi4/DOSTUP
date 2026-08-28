@@ -20,6 +20,9 @@ let modalHearings = [];   // временный список заседаний,
 let importDiffs = [];     // изменения, посчитанные при предпросмотре импорта
 let courtUpdateDiffs = []; // изменения заседаний, полученные от сайта суда до подтверждения
 let courtUpdateMode = 'hearings';
+let courtUpdateSource = 'manual';
+let pendingCourtAutoUpdate = null;
+let autoUpdatePromptTimer = 0;
 let bootStarted = false;
 let lastFocusedElement = null;
 const listenerReady = { cases:false, court:false, logs:false };
@@ -169,6 +172,7 @@ async function boot(){
 
     listenCases();
     listenCourt();
+    listenCourtAutoUpdate();
     listenLogs();
     listenBackups();
   }catch(err){
@@ -344,6 +348,16 @@ function listenCourt(){
     markListenerReady('court');
   }, err => handleListenerError('судебного производства', err));
 }
+function listenCourtAutoUpdate(){
+  onSnapshot(doc(db, 'systemSettings', 'courtAutoUpdate'), snap => {
+    const data = snap.exists() ? snap.data() : null;
+    pendingCourtAutoUpdate = data?.status === 'pending' && Array.isArray(data.changes) && data.changes.length
+      ? { id:snap.id, ...data }
+      : null;
+    updateCourtAutoUpdateBell();
+    queueCourtAutoUpdatePrompt();
+  }, err => console.warn('Не удалось загрузить уведомление автопроверки', err));
+}
 function listenLogs(){
   onSnapshot(collection(db, 'logs'), snap => {
     const sortedLogs = snap.docs.map(d => ({ id:d.id, ...d.data() }))
@@ -366,6 +380,7 @@ function listenLogs(){
 
 function markListenerReady(name){
   listenerReady[name] = true;
+  if(name === 'court') queueCourtAutoUpdatePrompt();
   if(navigator.onLine && Object.values(listenerReady).every(Boolean)){
     setConnectionStatus('online', '● подключено');
   }
@@ -991,8 +1006,11 @@ const courtUpdateSubtitle = document.getElementById('court-update-subtitle');
 const courtUpdateStatus = document.getElementById('court-update-status');
 const courtUpdatePreview = document.getElementById('court-update-preview');
 const courtUpdateApplyButton = document.getElementById('court-update-apply');
+const courtUpdateCancelButton = document.getElementById('court-update-cancel');
 const courtHearingUpdateButton = document.getElementById('court-hearing-update-btn');
 const courtDetailsUpdateButton = document.getElementById('court-details-update-btn');
+const courtUpdateBell = document.getElementById('court-update-bell');
+const courtUpdateBellCount = document.getElementById('court-update-bell-count');
 let courtUpdateProgressAnimation = 0;
 
 function normalizedHearings(hearings){
@@ -1009,6 +1027,54 @@ function normalizedHearings(hearings){
       seen.add(h.date);
       return true;
     });
+}
+
+function courtUpdateKey(diff){
+  return `${String(diff?.kind || 'unknown')}:${String(diff?.id || '')}`;
+}
+
+function scheduledUpdateStorageKey(runId){
+  return `dostup-deferred-court-update:${String(runId || '')}`;
+}
+
+function isScheduledUpdateDeferred(update=pendingCourtAutoUpdate){
+  if(!update?.runId) return false;
+  try{ return localStorage.getItem(scheduledUpdateStorageKey(update.runId)) === '1'; }
+  catch(_err){ return false; }
+}
+
+function deferScheduledUpdate(){
+  if(!pendingCourtAutoUpdate?.runId) return;
+  try{ localStorage.setItem(scheduledUpdateStorageKey(pendingCourtAutoUpdate.runId), '1'); }
+  catch(_err){ /* Уведомление останется видимым при следующем открытии. */ }
+}
+
+function formatScheduledCheckTime(value){
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return 'время проверки не указано';
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone:'Europe/Moscow', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'
+  }).format(date);
+}
+
+function updateCourtAutoUpdateBell(){
+  if(!courtUpdateBell || !courtUpdateBellCount) return;
+  const count = new Set((pendingCourtAutoUpdate?.changes || []).map(diff => diff.id)).size;
+  courtUpdateBell.hidden = count === 0;
+  courtUpdateBell.classList.toggle('is-attention', count > 0);
+  courtUpdateBellCount.textContent = count > 99 ? '99+' : String(count);
+  courtUpdateBell.setAttribute('aria-label', `Есть неприменённые изменения с сайтов судов: ${count}`);
+}
+
+function queueCourtAutoUpdatePrompt(){
+  if(autoUpdatePromptTimer) clearTimeout(autoUpdatePromptTimer);
+  if(!pendingCourtAutoUpdate || !listenerReady.court || isScheduledUpdateDeferred()) return;
+  autoUpdatePromptTimer = setTimeout(() => {
+    autoUpdatePromptTimer = 0;
+    if(!pendingCourtAutoUpdate || isScheduledUpdateDeferred()) return;
+    if(courtUpdateBackdrop.classList.contains('open') || document.getElementById('modal-backdrop')?.classList.contains('open')) return;
+    openScheduledCourtUpdate();
+  }, 450);
 }
 
 function mainCaseNumber(value){
@@ -1078,7 +1144,7 @@ function courtUpdateDetailsDiff(c, fetched={}){
 }
 
 function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked=0 }={}){
-  courtUpdateDiffs = diffs.map(diff => ({ ...diff, selected:diff.selected !== false }));
+  courtUpdateDiffs = diffs.map(diff => ({ ...diff, key:diff.key || courtUpdateKey(diff), selected:diff.selected !== false }));
 
   const lines = [];
   if(courtUpdateDiffs.length){
@@ -1101,7 +1167,7 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
         : '';
       return `<article class="court-update-case">
         <label class="court-update-case-head">
-          <input type="checkbox" data-court-update-select="${escapeAttr(diff.id)}" checked>
+          <input type="checkbox" data-court-update-select="${escapeAttr(diff.key)}" checked>
           <span><b>${escapeHtml(diff.name)}</b></span>
         </label>
         ${diff.court ? `<p>${escapeHtml(diff.court)}</p>` : ''}
@@ -1123,7 +1189,7 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
   courtUpdatePreview.innerHTML = lines.join('');
   courtUpdatePreview.querySelectorAll('[data-court-update-select]').forEach(input => {
     input.addEventListener('change', () => {
-      const diff = courtUpdateDiffs.find(item => item.id === input.dataset.courtUpdateSelect);
+      const diff = courtUpdateDiffs.find(item => item.key === input.dataset.courtUpdateSelect);
       if(diff) diff.selected = input.checked;
       refreshCourtUpdateSelectionControls();
     });
@@ -1154,9 +1220,59 @@ function refreshCourtUpdateSelectionControls(){
   }
 }
 
-function closeCourtUpdate(){
+function openScheduledCourtUpdate(){
+  if(!pendingCourtAutoUpdate?.changes?.length) return;
+  courtUpdateSource = 'scheduled';
+  courtUpdateMode = 'scheduled';
+  courtUpdateTitle.textContent = 'Изменения на сайтах судов';
+  courtUpdateSubtitle.textContent = `Автопроверка: ${formatScheduledCheckTime(pendingCourtAutoUpdate.checkedAt)}. Данные в карточках ещё не изменены.`;
+  courtUpdateStatus.textContent = `Проверено страниц: ${pendingCourtAutoUpdate.checkedCount || 0}. Найдены изменения, требующие подтверждения.`;
+  courtUpdateStatus.className = 'court-update-status is-warning';
+  courtUpdateApplyButton.hidden = true;
+  courtUpdateCancelButton.textContent = 'Отложить';
+  renderCourtUpdatePreview({
+    diffs:pendingCourtAutoUpdate.changes,
+    errors:pendingCourtAutoUpdate.errors || [],
+    withoutLinks:pendingCourtAutoUpdate.withoutLinks || 0,
+    checked:pendingCourtAutoUpdate.checkedCount || 0
+  });
+  openBackdrop(courtUpdateBackdrop, '#court-update-close');
+}
+
+async function resolveScheduledCourtUpdateChanges(diffs){
+  if(!pendingCourtAutoUpdate?.runId || !diffs?.length) return;
+  const runId = pendingCourtAutoUpdate.runId;
+  const resolvedKeys = new Set(diffs.map(courtUpdateKey));
+  const ref = doc(db, 'systemSettings', 'courtAutoUpdate');
+  await runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref);
+    if(!snap.exists()) return;
+    const current = snap.data();
+    if(current.runId !== runId || current.status !== 'pending') return;
+    const remaining = (Array.isArray(current.changes) ? current.changes : [])
+      .filter(diff => !resolvedKeys.has(courtUpdateKey(diff)));
+    if(remaining.length){
+      transaction.update(ref, { changes:remaining, updatedAt:Date.now() });
+    }else{
+      transaction.set(ref, {
+        ...current, status:'resolved', changes:[], errors:[], resolvedAt:Date.now()
+      });
+    }
+  });
+}
+
+async function resolveScheduledCourtUpdateMode(mode){
+  if(!pendingCourtAutoUpdate?.changes?.length) return;
+  const matching = pendingCourtAutoUpdate.changes.filter(diff => diff.kind === mode);
+  if(matching.length) await resolveScheduledCourtUpdateChanges(matching);
+}
+
+function closeCourtUpdate({ deferScheduled=true }={}){
+  if(courtUpdateSource === 'scheduled' && deferScheduled) deferScheduledUpdate();
   closeBackdrop(courtUpdateBackdrop);
   courtUpdateDiffs = [];
+  courtUpdateSource = 'manual';
+  courtUpdateCancelButton.textContent = 'Отмена';
 }
 
 function stopCourtUpdateProgress(){
@@ -1225,7 +1341,9 @@ async function requestCourtUpdates(mode){
     return;
   }
 
+  courtUpdateSource = 'manual';
   courtUpdateMode = mode;
+  courtUpdateCancelButton.textContent = 'Отмена';
   const isHearingsMode = mode === 'hearings';
   const triggerButton = isHearingsMode ? courtHearingUpdateButton : courtDetailsUpdateButton;
   courtUpdateTitle.textContent = isHearingsMode ? 'Обновление дат заседаний' : 'Обновление карточек дел';
@@ -1281,6 +1399,7 @@ async function requestCourtUpdates(mode){
 
     const unmatched = casesToCheck.filter(c => !payload.results.some(result => result?.id === c.id));
     unmatched.forEach(c => errors.push({ name:c.name, message:'сервис не вернул результат проверки' }));
+    if(!diffs.length && !errors.length) await resolveScheduledCourtUpdateMode(mode);
     await finishCourtUpdateProgress(
       errors.length ? 'is-warning' : 'is-success',
       `Проверено страниц: ${payload.results.length} из ${casesToCheck.length}.`
@@ -1301,8 +1420,9 @@ async function requestCourtUpdates(mode){
 
 courtHearingUpdateButton.addEventListener('click', () => requestCourtUpdates('hearings'));
 courtDetailsUpdateButton.addEventListener('click', () => requestCourtUpdates('details'));
+courtUpdateBell.addEventListener('click', openScheduledCourtUpdate);
 document.getElementById('court-update-close').addEventListener('click', closeCourtUpdate);
-document.getElementById('court-update-cancel').addEventListener('click', closeCourtUpdate);
+courtUpdateCancelButton.addEventListener('click', closeCourtUpdate);
 
 courtUpdateApplyButton.addEventListener('click', async event => {
   const selectedDiffs = courtUpdateDiffs.filter(diff => diff.selected);
@@ -1322,25 +1442,33 @@ courtUpdateApplyButton.addEventListener('click', async event => {
   }
 
   await performAction(event.currentTarget, 'Применение…', async () => {
-    const items = selectedDiffs.map(diff => {
-      const current = COURT.find(c => c.id === diff.id);
+    const updatesByCase = new Map();
+    selectedDiffs.forEach(diff => {
+      const existing = updatesByCase.get(diff.id) || { id:diff.id, name:diff.name, patch:{} };
+      existing.patch = { ...existing.patch, ...diff.patch };
+      updatesByCase.set(diff.id, existing);
+    });
+    const updates = [...updatesByCase.values()];
+    const items = updates.map(update => {
+      const current = COURT.find(c => c.id === update.id);
       const before = recordData(current);
       return {
         collection:'courtCases', docId:current.id, label:current.name,
-        before, after:{ ...before, ...diff.patch }
+        before, after:{ ...before, ...update.patch }
       };
     });
     await commitOperation(batch => {
-      selectedDiffs.forEach(diff => {
-        batch.update(doc(db, 'courtCases', diff.id), diff.patch);
+      updates.forEach(update => {
+        batch.update(doc(db, 'courtCases', update.id), update.patch);
       });
     }, {
-      text:`Сверка с сайтами судов: обновлены ${courtUpdateMode === 'hearings' ? 'даты заседаний' : 'сведения карточек'} по делам — ${selectedDiffs.length}.`,
-      action:courtUpdateMode === 'hearings' ? 'court.hearing_sync' : 'court.details_sync', items,
-      meta:{ source:'court-sites', confirmed:true, mode:courtUpdateMode }
+      text:`Сверка с сайтами судов: применены изменения по делам — ${updates.length}.`,
+      action:courtUpdateMode === 'hearings' ? 'court.hearing_sync' : courtUpdateMode === 'details' ? 'court.details_sync' : 'court.auto_sync', items,
+      meta:{ source:courtUpdateSource === 'scheduled' ? 'court-sites-scheduled' : 'court-sites', confirmed:true, mode:courtUpdateMode }
     });
-    const count = selectedDiffs.length;
-    closeCourtUpdate();
+    await resolveScheduledCourtUpdateChanges(selectedDiffs);
+    const count = updates.length;
+    closeCourtUpdate({ deferScheduled:false });
     showToast(`Изменения применены: карточек обновлено — ${count}.`, 'success');
   });
 });
@@ -1390,7 +1518,7 @@ function logActionLabel(action){
   return ({
     'case.update':'Изменение дела', 'case.create':'Добавление должника', 'case.delete':'Удаление должника',
     'court.update':'Изменение судопроизводства', 'court.create':'Добавление в судопроизводство', 'court.delete':'Удаление из судопроизводства',
-    'court.hearing_sync':'Обновление дат заседаний', 'court.details_sync':'Обновление карточек дел',
+    'court.hearing_sync':'Обновление дат заседаний', 'court.details_sync':'Обновление карточек дел', 'court.auto_sync':'Применение автопроверки судов',
     'import':'Массовый импорт', 'backup.restore':'Восстановление копии', 'undo':'Отмена операции',
     'system.migration':'Системная сверка данных', 'note':'Заметка'
   })[action] || 'Изменение';

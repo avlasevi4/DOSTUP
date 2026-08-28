@@ -2,3 +2,10 @@ name = "dostup-court-updater"
 main = "src/index.js"
 compatibility_date = "2025-06-01"
 workers_dev = true
+
+# Ежедневно в 04:30 UTC — это 07:30 по московскому времени (UTC+3).
+[triggers]
+crons = ["30 4 * * *"]
+
+[vars]
+FIREBASE_PROJECT_ID = "mrg37-b1669"
