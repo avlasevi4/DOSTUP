@@ -3,9 +3,9 @@ main = "src/index.js"
 compatibility_date = "2025-06-01"
 workers_dev = true
 
-# Ежедневно в 04:30 UTC — это 07:30 по московскому времени (UTC+3).
+# Ежедневно в 04:30 и 10:00 UTC — это 07:30 и 13:00 по московскому времени (UTC+3).
 [triggers]
-crons = ["30 4 * * *"]
+crons = ["30 4 * * *", "0 10 * * *"]
 
 [vars]
 FIREBASE_PROJECT_ID = "mrg37-b1669"
