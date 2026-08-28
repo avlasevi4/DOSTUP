@@ -993,6 +993,7 @@ const courtUpdatePreview = document.getElementById('court-update-preview');
 const courtUpdateApplyButton = document.getElementById('court-update-apply');
 const courtHearingUpdateButton = document.getElementById('court-hearing-update-btn');
 const courtDetailsUpdateButton = document.getElementById('court-details-update-btn');
+let courtUpdateProgressAnimation = 0;
 
 function normalizedHearings(hearings){
   const seen = new Set();
@@ -1158,6 +1159,62 @@ function closeCourtUpdate(){
   courtUpdateDiffs = [];
 }
 
+function stopCourtUpdateProgress(){
+  if(courtUpdateProgressAnimation){
+    cancelAnimationFrame(courtUpdateProgressAnimation);
+    courtUpdateProgressAnimation = 0;
+  }
+}
+
+function startCourtUpdateProgress(label, total){
+  stopCourtUpdateProgress();
+  courtUpdateStatus.className = 'court-update-status is-loading has-progress';
+  courtUpdateStatus.innerHTML = `
+    <div class="court-update-progress-head">
+      <span class="court-update-progress-label">${escapeHtml(label)}: ${total}</span>
+      <span class="court-update-progress-percent">3%</span>
+    </div>
+    <div class="court-update-progress-track" role="progressbar" aria-label="${escapeAttr(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="3">
+      <span class="court-update-progress-bar" style="width:3%"></span>
+    </div>`;
+
+  const track = courtUpdateStatus.querySelector('.court-update-progress-track');
+  const bar = courtUpdateStatus.querySelector('.court-update-progress-bar');
+  const percent = courtUpdateStatus.querySelector('.court-update-progress-percent');
+  const startedAt = performance.now();
+
+  const animate = now => {
+    const elapsed = now - startedAt;
+    // За первые 10 секунд шкала доходит до 92%. Если сайты судов отвечают
+    // дольше, движение продолжается всё медленнее, но 100% показываются
+    // только после фактического завершения запроса.
+    const progress = elapsed <= 10000
+      ? 3 + (elapsed / 10000) * 89
+      : 92 + 4 * (1 - Math.exp(-(elapsed - 10000) / 12000));
+    const visibleProgress = Math.min(96, progress);
+    bar.style.width = `${visibleProgress.toFixed(1)}%`;
+    track.setAttribute('aria-valuenow', String(Math.round(visibleProgress)));
+    percent.textContent = `${Math.round(visibleProgress)}%`;
+    courtUpdateProgressAnimation = requestAnimationFrame(animate);
+  };
+  courtUpdateProgressAnimation = requestAnimationFrame(animate);
+}
+
+async function finishCourtUpdateProgress(stateClass, message){
+  stopCourtUpdateProgress();
+  const label = courtUpdateStatus.querySelector('.court-update-progress-label');
+  const track = courtUpdateStatus.querySelector('.court-update-progress-track');
+  const bar = courtUpdateStatus.querySelector('.court-update-progress-bar');
+  const percent = courtUpdateStatus.querySelector('.court-update-progress-percent');
+  courtUpdateStatus.className = `court-update-status ${stateClass} has-progress is-complete`;
+  if(label) label.textContent = message;
+  if(track) track.setAttribute('aria-valuenow', '100');
+  if(bar) bar.style.width = '100%';
+  if(percent) percent.textContent = '100%';
+  // Даём пользователю увидеть красивое завершение шкалы перед результатами.
+  await new Promise(resolve => setTimeout(resolve, 360));
+}
+
 async function requestCourtUpdates(mode){
   if(!listenerReady.court){
     showToast('Дождитесь загрузки судебного производства.', 'info');
@@ -1189,8 +1246,10 @@ async function requestCourtUpdates(mode){
   openBackdrop(courtUpdateBackdrop, '#court-update-close');
   courtUpdateApplyButton.hidden = true;
   courtUpdatePreview.innerHTML = '';
-  courtUpdateStatus.textContent = `${isHearingsMode ? 'Проверяем даты заседаний' : 'Проверяем сведения карточек'}: ${casesToCheck.length}…`;
-  courtUpdateStatus.className = 'court-update-status is-loading';
+  startCourtUpdateProgress(
+    isHearingsMode ? 'Проверяем даты заседаний' : 'Проверяем сведения карточек',
+    casesToCheck.length
+  );
   triggerButton.disabled = true;
 
   let timeoutId;
@@ -1222,15 +1281,17 @@ async function requestCourtUpdates(mode){
 
     const unmatched = casesToCheck.filter(c => !payload.results.some(result => result?.id === c.id));
     unmatched.forEach(c => errors.push({ name:c.name, message:'сервис не вернул результат проверки' }));
-    courtUpdateStatus.textContent = `Проверено страниц: ${payload.results.length} из ${casesToCheck.length}.`;
-    courtUpdateStatus.className = `court-update-status ${errors.length ? 'is-warning' : 'is-success'}`;
+    await finishCourtUpdateProgress(
+      errors.length ? 'is-warning' : 'is-success',
+      `Проверено страниц: ${payload.results.length} из ${casesToCheck.length}.`
+    );
     renderCourtUpdatePreview({ diffs, errors, withoutLinks, checked:payload.results.length });
   }catch(err){
     console.error('Проверка дат заседаний', err);
-    courtUpdateStatus.textContent = err?.name === 'AbortError'
+    const errorMessage = err?.name === 'AbortError'
       ? 'Проверка заняла слишком много времени. Попробуйте ещё раз позднее.'
       : 'Не удалось получить данные с сервиса проверки. Повторите попытку позднее.';
-    courtUpdateStatus.className = 'court-update-status is-error';
+    await finishCourtUpdateProgress('is-error', errorMessage);
     renderCourtUpdatePreview();
   }finally{
     if(timeoutId) clearTimeout(timeoutId);
