@@ -87,8 +87,8 @@ function deepEqual(left, right){
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function isCompletedCourtCase(caseData){
-  return ['done', 'denied', 'partial'].includes(String(caseData?.dot || ''));
+function isInactiveCourtCase(caseData){
+  return ['paused', 'terminated', 'done', 'denied', 'partial'].includes(String(caseData?.dot || ''));
 }
 
 function hearingDiff(caseData, fetched={}){
@@ -307,11 +307,11 @@ async function checkCase(input){
 async function runScheduledCourtCheck(env){
   const courtCases = await readCourtCases(env);
   const casesToCheck = courtCases
-    .filter(caseData => !isCompletedCourtCase(caseData))
+    .filter(caseData => !isInactiveCourtCase(caseData))
     .map(caseData => ({ id:caseData.id, name:caseData.name || '', caseUrl:String(caseData.caseUrl || '').trim(), caseData }))
     .filter(item => item.caseUrl);
 
-  const withoutLinks = courtCases.filter(caseData => !isCompletedCourtCase(caseData) && !String(caseData.caseUrl || '').trim()).length;
+  const withoutLinks = courtCases.filter(caseData => !isInactiveCourtCase(caseData) && !String(caseData.caseUrl || '').trim()).length;
   const results = [];
   for(const item of casesToCheck){
     results.push(await checkCase(item));

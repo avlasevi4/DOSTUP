@@ -257,6 +257,12 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 }
 .court-card-completed{ background:#F1F0EA; border-color:#D3D1C7; }
 .court-card-completed .court-hearing > b{ color:var(--ink); }
+.court-card-paused{ background:#FFF9EA; border-color:#D8B86C; }
+.court-card-paused:hover{ border-color:#B88724; }
+.court-card-paused .court-hearing > b{ color:#8B6111; }
+.court-card-terminated{ background:#FBEDEB; border-color:#D9A39C; }
+.court-card-terminated:hover{ border-color:var(--stamp-red); }
+.court-card-terminated .court-hearing > b{ color:var(--stamp-red); }
 .court-card-awaiting-date{ background:#FBF4E2; border-color:#D8B86C; }
 .court-card-awaiting-date:hover{ border-color:#B88724; }
 .court-card-awaiting-date .court-hearing > b{ color:#8B6111; }

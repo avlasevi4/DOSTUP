@@ -629,7 +629,15 @@ function pluralDela(n){
 /* ---------------------------------------------------------------------------
    РЕНДЕР: СУДЕБНОЕ ПРОИЗВОДСТВО
 --------------------------------------------------------------------------- */
-const DOT = { blue:'🔵', done:'✅', denied:'❌', partial:'🟠' };
+const DOT = { blue:'🔵', paused:'🟡', terminated:'🔴', done:'✅', denied:'❌', partial:'🟠' };
+const COURT_STATUS_LABELS = {
+  blue:'В процессе',
+  paused:'Приостановлено',
+  terminated:'Прекращено производство',
+  done:'Удовлетворено',
+  denied:'Отказано',
+  partial:'Удовлетворено частично'
+};
 const COURT_OUTCOME_LABELS = {
   done:'Удовлетворено',
   denied:'Отказано',
@@ -640,8 +648,24 @@ function isCompletedCourtCase(c){
   return !!COURT_OUTCOME_LABELS[c?.dot];
 }
 
+function isPausedCourtCase(c){
+  return c?.dot === 'paused';
+}
+
+function isTerminatedCourtCase(c){
+  return c?.dot === 'terminated';
+}
+
+function isClosedCourtCase(c){
+  return isCompletedCourtCase(c) || isTerminatedCourtCase(c);
+}
+
+function isInactiveForHearings(c){
+  return isClosedCourtCase(c) || isPausedCourtCase(c);
+}
+
 function courtOutcomeLabel(c){
-  return COURT_OUTCOME_LABELS[c?.dot] || 'В процессе';
+  return COURT_STATUS_LABELS[c?.dot] || COURT_STATUS_LABELS.blue;
 }
 
 function hearingDateObject(value){
@@ -670,7 +694,7 @@ function courtDecisionDateOf(c){
 }
 
 function nearestUpcomingHearingOf(c){
-  if(isCompletedCourtCase(c)) return null;
+  if(isInactiveForHearings(c)) return null;
   const now = new Date();
   return hearingsOf(c)
     .map(h => ({ hearing:h, dt:hearingDateObject(h?.date) }))
@@ -681,7 +705,7 @@ function nearestUpcomingHearingOf(c){
 // Дело требует внимания, если последнее назначенное заседание уже прошло,
 // а следующей даты в карточке ещё нет.
 function latestPassedHearingAwaitingUpdateOf(c){
-  if(isCompletedCourtCase(c) || nearestUpcomingHearingOf(c)) return null;
+  if(isInactiveForHearings(c) || nearestUpcomingHearingOf(c)) return null;
   const now = new Date();
   return hearingsOf(c)
     .map(h => ({ hearing:h, dt:hearingDateObject(h?.date) }))
@@ -691,17 +715,18 @@ function latestPassedHearingAwaitingUpdateOf(c){
 
 function courtCasesAwaitingHearingDate(){
   return COURT
-    .filter(c => !isCompletedCourtCase(c))
+    .filter(c => !isInactiveForHearings(c))
     .map(c => ({ caseData:c, hearing:latestPassedHearingAwaitingUpdateOf(c) }))
     .filter(item => item.hearing);
 }
 
 function compareCourtCases(a,b){
-  const aCompleted = isCompletedCourtCase(a);
-  const bCompleted = isCompletedCourtCase(b);
-  if(aCompleted !== bCompleted) return aCompleted ? 1 : -1;
+  const statusRank = c => isClosedCourtCase(c) ? 2 : (isPausedCourtCase(c) ? 1 : 0);
+  const aRank = statusRank(a);
+  const bRank = statusRank(b);
+  if(aRank !== bRank) return aRank - bRank;
 
-  if(!aCompleted){
+  if(aRank === 0){
     const aNext = nearestUpcomingHearingOf(a);
     const bNext = nearestUpcomingHearingOf(b);
     const aTime = hearingDateObject(aNext?.date)?.getTime() ?? Number.POSITIVE_INFINITY;
@@ -850,8 +875,10 @@ function renderCourt(){
   COURT.slice().sort(compareCourtCases).forEach(c => {
     const card = document.createElement('div');
     const completed = isCompletedCourtCase(c);
-    const awaitingDate = !completed ? latestPassedHearingAwaitingUpdateOf(c) : null;
-    card.className = `court-card${completed ? ' court-card-completed' : ''}${awaitingDate ? ' court-card-awaiting-date' : ''}`;
+    const paused = isPausedCourtCase(c);
+    const terminated = isTerminatedCourtCase(c);
+    const awaitingDate = !isInactiveForHearings(c) ? latestPassedHearingAwaitingUpdateOf(c) : null;
+    card.className = `court-card${completed ? ' court-card-completed' : ''}${paused ? ' court-card-paused' : ''}${terminated ? ' court-card-terminated' : ''}${awaitingDate ? ' court-card-awaiting-date' : ''}`;
     card.dataset.courtInfoId = c.id;
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
@@ -860,7 +887,11 @@ function renderCourt(){
     const decisionDate = completed ? courtDecisionDateOf(c) : '';
     const hearingText = completed
       ? `${courtOutcomeLabel(c)} · решение${decisionDate ? ' от '+formatRuDate(decisionDate) : ': дата не указана'}`
-      : (nh ? formatRuDateTime(nh.date) : (awaitingDate ? `заседание прошло ${formatRuDateTime(awaitingDate.date)}` : 'не назначено'));
+      : (paused
+          ? courtOutcomeLabel(c)
+          : (terminated
+              ? courtOutcomeLabel(c)
+              : (nh ? formatRuDateTime(nh.date) : (awaitingDate ? `заседание прошло ${formatRuDateTime(awaitingDate.date)}` : 'не назначено'))));
     const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
@@ -897,7 +928,7 @@ function renderCourtSummary(){
   const upcoming = upcomingCourtHearings();
   const weekAhead = new Date(now.getTime() + 7*24*3600*1000);
   let weekCount = 0;
-  COURT.filter(c => !isCompletedCourtCase(c)).forEach(c => hearingsOf(c).forEach(h => {
+  COURT.filter(c => !isInactiveForHearings(c)).forEach(c => hearingsOf(c).forEach(h => {
     const dt = hearingDateObject(h?.date);
     if(dt && dt >= now && dt <= weekAhead) weekCount++;
   }));
@@ -1388,11 +1419,12 @@ async function requestCourtUpdates(mode){
     ? 'Даты сверяются со страницами дел на сайтах судов. Изменения попадут в карточки только после подтверждения.'
     : 'Номер дела будет предложен, если он пустой или не совпадает; судья — только если это поле пустое.';
 
+  const isEligibleForUpdate = c => isHearingsMode ? !isInactiveForHearings(c) : !isClosedCourtCase(c);
   const casesToCheck = COURT
-    .filter(c => !isCompletedCourtCase(c))
+    .filter(isEligibleForUpdate)
     .map(c => ({ id:c.id, name:c.name, caseUrl:normalizeWebUrl(c.caseUrl) }))
     .filter(c => c.caseUrl);
-  const withoutLinks = COURT.filter(c => !isCompletedCourtCase(c) && !normalizeWebUrl(c.caseUrl)).length;
+  const withoutLinks = COURT.filter(c => isEligibleForUpdate(c) && !normalizeWebUrl(c.caseUrl)).length;
   if(!casesToCheck.length){
     showToast('У активных дел нет ссылок на страницы суда.', 'info');
     return;
@@ -1948,6 +1980,8 @@ function openCourtModal(c){
     <div class="field"><label>Статус производства</label>
       <select id="f-dot">
         <option value="blue" ${c.dot==='blue'?'selected':''}>🔵 В процессе</option>
+        <option value="paused" ${c.dot==='paused'?'selected':''}>🟡 Приостановлено</option>
+        <option value="terminated" ${c.dot==='terminated'?'selected':''}>🔴 Прекращено производство</option>
         <option value="done" ${c.dot==='done'?'selected':''}>✅ Удовлетворено</option>
         <option value="denied" ${c.dot==='denied'?'selected':''}>❌ Отказано</option>
         <option value="partial" ${c.dot==='partial'?'selected':''}>🟠 Удовлетворено частично</option>
@@ -2210,7 +2244,7 @@ function hearingsWithinDays(days = 30){
   end.setDate(end.getDate() + days);
   end.setHours(23, 59, 59, 999);
 
-  return COURT.filter(caseData => !isCompletedCourtCase(caseData)).flatMap(caseData => hearingsOf(caseData).map(hearing => ({
+  return COURT.filter(caseData => !isInactiveForHearings(caseData)).flatMap(caseData => hearingsOf(caseData).map(hearing => ({
     caseData,
     hearing,
     dt: hearingDateObject(hearing?.date)
@@ -2251,7 +2285,11 @@ function telegramCourtLine(c){
     compactText(c.court) || 'суд не указан',
     compactText(c.caseNumber) ? `дело №${compactText(c.caseNumber)}` : 'номер дела не указан',
     compactText(c.judge) ? `судья ${compactText(c.judge)}` : 'судья не указан',
-    completed ? telegramCourtResult(c) : (nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено')
+    completed
+      ? telegramCourtResult(c)
+      : (isPausedCourtCase(c) || isTerminatedCourtCase(c)
+          ? lowerFirst(courtOutcomeLabel(c))
+          : (nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено'))
   ];
   const prefix = Number.isFinite(registryNumber) && registryNumber !== Number.MAX_SAFE_INTEGER ? `${registryNumber}. ` : '';
   return `${icon} ${prefix}${compactText(c.name) || 'ФИО не указано'} — ${parts.join(', ')}\n   ${telegramEquipmentLine(c)}`;
@@ -2392,7 +2430,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
         const decisionDate = isCompletedCourtCase(c) ? courtDecisionDateOf(c) : '';
         const outcome = isCompletedCourtCase(c)
           ? `, ${courtOutcomeLabel(c)}${decisionDate ? ', решение от '+formatRuDate(decisionDate) : ', дата решения не указана'}`
-          : '';
+          : ((isPausedCourtCase(c) || isTerminatedCourtCase(c)) ? `, ${courtOutcomeLabel(c)}` : '');
         md += `- ${DOT[c.dot]||'🔵'} ${escapeMdCell(c.name)} — ${escapeMdCell(c.court||'')}${c.caseNumber?', дело №'+escapeMdCell(c.caseNumber):''}${c.judge?', судья '+escapeMdCell(c.judge):''}${nh?', заседание '+formatRuDateTime(nh.date):''}${escapeMdCell(outcome)}${escapeMdCell(preparation)}\n`;
       });
     }
