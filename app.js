@@ -334,6 +334,10 @@ function listenCases(){
   onSnapshot(collection(db, 'cases'), snap => {
     CASES = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     renderGroups();
+    if(COURT.length){
+      renderCourt();
+      renderCourtSummary();
+    }
     renderSummary();
     const stampTotal = document.getElementById('stamp-total');
     if(stampTotal) stampTotal.textContent = CASES.length || 18;
@@ -877,12 +881,13 @@ function renderCourt(){
     const completed = isCompletedCourtCase(c);
     const paused = isPausedCourtCase(c);
     const terminated = isTerminatedCourtCase(c);
+    const disconnected = isDisconnectedCourtCase(c);
     const awaitingDate = !isInactiveForHearings(c) ? latestPassedHearingAwaitingUpdateOf(c) : null;
-    card.className = `court-card${completed ? ' court-card-completed' : ''}${paused ? ' court-card-paused' : ''}${terminated ? ' court-card-terminated' : ''}${awaitingDate ? ' court-card-awaiting-date' : ''}`;
+    card.className = `court-card${completed ? ' court-card-completed' : ''}${paused ? ' court-card-paused' : ''}${terminated ? ' court-card-terminated' : ''}${disconnected ? ' court-card-disconnected' : ''}${awaitingDate ? ' court-card-awaiting-date' : ''}`;
     card.dataset.courtInfoId = c.id;
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-label', `Открыть судебное дело: ${c.name}`);
+    card.setAttribute('aria-label', `Открыть судебное дело: ${c.name}${disconnected ? ', газ отключён' : ''}`);
     const nh = nearestUpcomingHearingOf(c);
     const decisionDate = completed ? courtDecisionDateOf(c) : '';
     const hearingText = completed
@@ -894,8 +899,10 @@ function renderCourt(){
               : (nh ? formatRuDateTime(nh.date) : (awaitingDate ? `заседание прошло ${formatRuDateTime(awaitingDate.date)}` : 'не назначено'))));
     const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
+      ${disconnected ? `<span class="court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>
+      <span class="court-disconnected-icon" aria-hidden="true">${disconnectedGasIconSvg()}</span>` : ''}
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
-      <div>
+      <div class="court-card-main">
         <div class="court-name">${escapeHtml(c.name)}</div>
         <div class="court-meta">${escapeHtml(c.court || '—')}${c.caseNumber ? ' · дело №'+escapeHtml(c.caseNumber) : ''}${c.filedDate ? ' · подан '+formatRuDate(c.filedDate) : ''}</div>
         ${courtEquipmentHtml(c)}
@@ -1012,6 +1019,14 @@ function renderCourtAwaitingHearings(){
     link.addEventListener('click', event => event.stopPropagation());
     link.addEventListener('keydown', event => event.stopPropagation());
   });
+}
+
+function disconnectedGasIconSvg(){
+  return `<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+    <circle cx="32" cy="32" r="26"></circle>
+    <path class="gas-off-flame" d="M32 49c-8.1 0-13.3-5.4-13.3-12.5 0-6.7 4.6-11.6 10.5-17.9.5 4.9 3.2 7.2 5.9 8.8.3-5.4 2.5-9.4 6.4-13.4 2.5 5.2 4.9 10.1 4.9 16.6C46.4 40.8 40.9 49 32 49Z"></path>
+    <path class="gas-off-slash" d="M13.5 13.5 50.5 50.5"></path>
+  </svg>`;
 }
 window.scrollToCourtInfoById = function(id){
   const card = [...document.querySelectorAll('.court-card[data-court-info-id]')]
@@ -2238,6 +2253,15 @@ function linkedCourtCase(caseData){
   return COURT.find(c => normalizeAccount(c.account) === account) || null;
 }
 
+function linkedRegistryCase(courtCase){
+  const account = normalizeAccount(courtCase?.account);
+  return CASES.find(c => normalizeAccount(c.account) === account) || null;
+}
+
+function isDisconnectedCourtCase(courtCase){
+  return linkedRegistryCase(courtCase)?.statusKey === 'disconnected';
+}
+
 function hearingsWithinDays(days = 30){
   const now = new Date();
   const end = new Date(now);
@@ -2264,7 +2288,7 @@ function telegramDeadlineLine({ caseData, hearing }){
 }
 
 function courtSortNumber(c){
-  const linked = CASES.find(item => normalizeAccount(item.account) === normalizeAccount(c.account));
+  const linked = linkedRegistryCase(c);
   return Number(linked?.num) || Number.MAX_SAFE_INTEGER;
 }
 
