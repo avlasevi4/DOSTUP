@@ -900,7 +900,7 @@ function renderCourt(){
     const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
       ${disconnected ? `<span class="court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>
-      <span class="court-disconnected-icon" aria-hidden="true">${disconnectedGasIconSvg()}</span>` : ''}
+      <span class="court-disconnected-icon" aria-hidden="true"><img src="./assets/no-gas-sign-v1.png?v=1" alt=""></span>` : ''}
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
       <div class="court-card-main">
         <div class="court-name">${escapeHtml(c.name)}</div>
@@ -1021,13 +1021,6 @@ function renderCourtAwaitingHearings(){
   });
 }
 
-function disconnectedGasIconSvg(){
-  return `<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-    <circle cx="32" cy="32" r="26"></circle>
-    <path class="gas-off-flame" d="M32 49c-8.1 0-13.3-5.4-13.3-12.5 0-6.7 4.6-11.6 10.5-17.9.5 4.9 3.2 7.2 5.9 8.8.3-5.4 2.5-9.4 6.4-13.4 2.5 5.2 4.9 10.1 4.9 16.6C46.4 40.8 40.9 49 32 49Z"></path>
-    <path class="gas-off-slash" d="M13.5 13.5 50.5 50.5"></path>
-  </svg>`;
-}
 window.scrollToCourtInfoById = function(id){
   const card = [...document.querySelectorAll('.court-card[data-court-info-id]')]
     .find(item => item.dataset.courtInfoId === id);
