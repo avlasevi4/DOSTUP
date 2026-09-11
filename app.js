@@ -331,7 +331,8 @@ async function migrateStatusConsistencyV1(){
 
 function listenCases(){
   onSnapshot(collection(db, 'cases'), snap => {
-    CASES = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const records = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    CASES = canonicalRegistryCases(records);
     renderGroups();
     if(COURT.length){
       renderCourt();
@@ -443,6 +444,38 @@ function canonicalCourtCases(records){
     const leftLatest = latestHearingOf(left)?.date || '';
     const rightLatest = latestHearingOf(right)?.date || '';
     return rightLatest.localeCompare(leftLatest) || String(left.id || '').localeCompare(String(right.id || ''));
+  })[0]);
+}
+
+// Рабочий реестр был импортирован из ранней версии приложения и сохраняет
+// исторические поля groupId/status/icon. Стартовые записи их не имеют. При
+// случайном дубле показываем карточку с подтверждённой историей, не меняя
+// данные в фоне; сами дубли удаляются отдельной журналируемой операцией.
+function registryRecordQuality(record){
+  let score = 0;
+  if(String(record?.groupId || '').trim()) score += 40;
+  if(String(record?.groupTitle || '').trim()) score += 12;
+  if(String(record?.status || '').trim()) score += 8;
+  if(String(record?.icon || '').trim()) score += 4;
+  if(String(record?.badge || '').trim()) score += 4;
+  if(String(record?.fee || '').trim()) score += 4;
+  if(String(record?.note || '').trim()) score += 2;
+  return score;
+}
+
+function canonicalRegistryCases(records){
+  const byAccount = new Map();
+  records.forEach(record => {
+    const account = normalizeAccount(record?.account);
+    const key = account || `__without_account_${record?.id || Math.random()}`;
+    const group = byAccount.get(key) || [];
+    group.push(record);
+    byAccount.set(key, group);
+  });
+  return [...byAccount.values()].map(group => group.slice().sort((left, right) => {
+    const qualityGap = registryRecordQuality(right) - registryRecordQuality(left);
+    if(qualityGap) return qualityGap;
+    return String(left.id || '').localeCompare(String(right.id || ''));
   })[0]);
 }
 

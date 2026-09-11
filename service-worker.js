@@ -1,9 +1,9 @@
-const CACHE_NAME = 'dostup-pwa-v10';
+const CACHE_NAME = 'dostup-pwa-v11';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css?v=6.2',
-  './app.js?v=6.2',
+  './app.js?v=6.3',
   './firebase-config.js',
   './seed-data.js',
   './court-update-config.js',
