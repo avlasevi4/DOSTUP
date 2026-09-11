@@ -265,17 +265,10 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
 .court-card-terminated .court-hearing > b{ color:var(--stamp-red); }
 .court-card-disconnected{
   background:#EFF8FC; border:2px solid #F08B38;
-  box-shadow:0 0 0 2px rgba(240,139,56,.13), 0 0 12px rgba(240,139,56,.12);
+  animation:court-disconnected-border-pulse 3.6s ease-in-out infinite;
 }
 .court-card-disconnected:hover{ border-color:#F7A252; }
 .court-card-disconnected.court-card-targeted{ background:#F8FCFE; border-color:#F7A252; }
-.court-disconnected-runner{ position:absolute; z-index:3; inset:0; border-radius:inherit; overflow:visible; pointer-events:none; }
-.court-disconnected-runner svg{ display:block; width:100%; height:100%; overflow:visible; }
-.court-disconnected-runner rect{
-  fill:none; stroke:#56C8F7; stroke-width:4.2; vector-effect:non-scaling-stroke; stroke-linecap:round;
-  stroke-dasharray:4 9; stroke-dashoffset:0; filter:drop-shadow(0 0 3px rgba(54,181,239,.82));
-  animation:court-disconnected-led-run 2.8s linear infinite;
-}
 .court-card > .court-dot,.court-card > .court-card-main,.court-card > .court-hearing{ position:relative; z-index:1; }
 .court-disconnected-stamp{
   position:absolute; z-index:0; left:50%; top:51%; transform:translate(-50%,-50%) rotate(-16deg);
@@ -284,7 +277,16 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
   color:#B32920; font-family:var(--font-mono); font-size:clamp(27px,3.5vw,48px); font-weight:700;
   letter-spacing:.12em; line-height:1; opacity:.28; white-space:nowrap; pointer-events:none; user-select:none;
 }
-@keyframes court-disconnected-led-run{ to{ stroke-dashoffset:-100; } }
+@keyframes court-disconnected-border-pulse{
+  0%,100%{
+    border-color:#E98738;
+    box-shadow:0 0 0 2px rgba(240,139,56,.11), 0 0 0 rgba(240,139,56,0);
+  }
+  50%{
+    border-color:#FFA04B;
+    box-shadow:0 0 0 4px rgba(240,139,56,.19), 0 0 18px rgba(240,139,56,.24);
+  }
+}
 .court-card-awaiting-date{ background:#FBF4E2; border-color:#D8B86C; }
 .court-card-awaiting-date:hover{ border-color:#B88724; }
 .court-card-awaiting-date .court-hearing > b{ color:#8B6111; }
@@ -532,7 +534,6 @@ body:not(.role-admin) [data-admin-only]{ display:none !important; }
     border-color:#F08B38;
     box-shadow:0 0 0 3px rgba(240,139,56,.14);
   }
-  .court-disconnected-runner rect{ animation:none !important; }
 }
 
 :focus-visible{ outline:2px solid var(--stamp-blue); outline-offset:2px; }
