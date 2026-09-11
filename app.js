@@ -967,7 +967,7 @@ function renderCourt(){
               : (nh ? formatRuDateTime(nh.date) : (awaitingDate ? `заседание прошло ${formatRuDateTime(awaitingDate.date)}` : 'не назначено'))));
     const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
-      ${disconnected ? `<span class="court-disconnected-runner" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false"><rect x="1.5" y="1.5" width="97" height="97" rx="3" pathLength="100" /></svg></span><span class="court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>` : ''}
+      ${disconnected ? `<span class="court-disconnected-runner" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false"><rect x="0" y="0" width="100" height="100" rx="3" pathLength="100" /></svg></span><span class="court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>` : ''}
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
       <div class="court-card-main">
         <div class="court-name">${escapeHtml(c.name)}</div>
