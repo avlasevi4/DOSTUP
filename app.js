@@ -168,7 +168,6 @@ async function boot(){
     await seedIfEmpty();
     await migrateLegacyCases();
     await migrateLegacyCourt();
-    await fixLegacyNotesOnce();
     await migrateStatusConsistencyV1();
     await ensureBaselineBackup();
 
@@ -346,7 +345,8 @@ function listenCases(){
 }
 function listenCourt(){
   onSnapshot(collection(db, 'courtCases'), snap => {
-    COURT = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const records = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    COURT = canonicalCourtCases(records);
     renderGroups();
     renderCourt();
     renderCourtSummary();
@@ -409,6 +409,41 @@ function recordData(record){
   if(!record) return null;
   const { id, ...data } = record;
   return JSON.parse(JSON.stringify(data));
+}
+
+// В ранней версии базы стартовые судебные карточки могли сохраниться рядом с
+// рабочими карточками того же лицевого счёта. Для интерфейса и сверки суда
+// берём наиболее заполненную карточку. Это не изменяет данные в фоне: очистка
+// дублей выполняется отдельной, журналируемой операцией.
+function courtRecordQuality(record){
+  let score = 0;
+  if(String(record?.caseNumber || '').trim()) score += 24;
+  if(String(record?.caseUrl || '').trim()) score += 24;
+  if(String(record?.judge || '').trim()) score += 10;
+  const notes = String(record?.notes || '').trim();
+  if(notes && !/^движение неизвестно\.?$/i.test(notes)) score += 8;
+  score += Math.min(Array.isArray(record?.hearings) ? record.hearings.length : 0, 8) * 4;
+  if(['done', 'denied', 'partial', 'terminated'].includes(record?.dot)) score += 14;
+  if(record?.dot === 'paused') score += 5;
+  return score;
+}
+
+function canonicalCourtCases(records){
+  const byAccount = new Map();
+  records.forEach(record => {
+    const account = normalizeAccount(record?.account);
+    const key = account || `__without_account_${record?.id || Math.random()}`;
+    const group = byAccount.get(key) || [];
+    group.push(record);
+    byAccount.set(key, group);
+  });
+  return [...byAccount.values()].map(group => group.slice().sort((left, right) => {
+    const qualityGap = courtRecordQuality(right) - courtRecordQuality(left);
+    if(qualityGap) return qualityGap;
+    const leftLatest = latestHearingOf(left)?.date || '';
+    const rightLatest = latestHearingOf(right)?.date || '';
+    return rightLatest.localeCompare(leftLatest) || String(left.id || '').localeCompare(String(right.id || ''));
+  })[0]);
 }
 
 async function deleteDocumentsInChunks(collectionName, ids){
@@ -899,8 +934,7 @@ function renderCourt(){
               : (nh ? formatRuDateTime(nh.date) : (awaitingDate ? `заседание прошло ${formatRuDateTime(awaitingDate.date)}` : 'не назначено'))));
     const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
-      ${disconnected ? `<span class="court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>
-      <span class="court-disconnected-icon" aria-hidden="true"><img src="./assets/no-gas-sign-v1.png?v=1" alt=""></span>` : ''}
+      ${disconnected ? `<span class="court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>` : ''}
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
       <div class="court-card-main">
         <div class="court-name">${escapeHtml(c.name)}</div>
@@ -1599,7 +1633,7 @@ function logActionLabel(action){
     'court.update':'Изменение судопроизводства', 'court.create':'Добавление в судопроизводство', 'court.delete':'Удаление из судопроизводства',
     'court.hearing_sync':'Обновление дат заседаний', 'court.details_sync':'Обновление карточек дел', 'court.auto_sync':'Применение автопроверки судов',
     'import':'Массовый импорт', 'backup.restore':'Восстановление копии', 'undo':'Отмена операции',
-    'system.migration':'Системная сверка данных', 'note':'Заметка'
+    'system.migration':'Системная сверка данных', 'system.deduplication':'Очистка дубликатов', 'note':'Заметка'
   })[action] || 'Изменение';
 }
 

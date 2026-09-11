@@ -91,6 +91,40 @@ function isInactiveCourtCase(caseData){
   return ['paused', 'terminated', 'done', 'denied', 'partial'].includes(String(caseData?.dot || ''));
 }
 
+// Защита от старых стартовых карточек, которые когда-то могли остаться рядом
+// с рабочей карточкой того же лицевого счёта. Worker проверяет только наиболее
+// заполненную карточку, чтобы устаревшая копия не создавала ложные предложения.
+function courtRecordQuality(caseData){
+  let score = 0;
+  if(String(caseData?.caseNumber || '').trim()) score += 24;
+  if(String(caseData?.caseUrl || '').trim()) score += 24;
+  if(String(caseData?.judge || '').trim()) score += 10;
+  const notes = String(caseData?.notes || '').trim();
+  if(notes && !/^движение неизвестно\.?$/i.test(notes)) score += 8;
+  score += Math.min(Array.isArray(caseData?.hearings) ? caseData.hearings.length : 0, 8) * 4;
+  if(['done', 'denied', 'partial', 'terminated'].includes(caseData?.dot)) score += 14;
+  if(caseData?.dot === 'paused') score += 5;
+  return score;
+}
+
+function canonicalCourtCases(records){
+  const byAccount = new Map();
+  records.forEach(record => {
+    const account = String(record?.account || '').replace(/\D/g, '');
+    const key = account || `__without_account_${record?.id || crypto.randomUUID()}`;
+    const group = byAccount.get(key) || [];
+    group.push(record);
+    byAccount.set(key, group);
+  });
+  return [...byAccount.values()].map(group => group.slice().sort((left, right) => {
+    const qualityGap = courtRecordQuality(right) - courtRecordQuality(left);
+    if(qualityGap) return qualityGap;
+    const leftLatest = normalizedHearings(left?.hearings).at(-1)?.date || '';
+    const rightLatest = normalizedHearings(right?.hearings).at(-1)?.date || '';
+    return rightLatest.localeCompare(leftLatest) || String(left.id || '').localeCompare(String(right.id || ''));
+  })[0]);
+}
+
 function hearingDiff(caseData, fetched={}){
   const beforeHearings = normalizedHearings(caseData.hearings);
   const today = moscowToday();
@@ -190,10 +224,11 @@ async function firestoreRequest(env, documentPath, options={}){
 
 async function readCourtCases(env){
   const payload = await firestoreRequest(env, 'courtCases');
-  return (payload.documents || []).map(document => ({
+  const records = (payload.documents || []).map(document => ({
     id:String(document.name || '').split('/').pop(),
     ...firestoreFieldsToObject(document.fields)
   }));
+  return canonicalCourtCases(records);
 }
 
 async function writeAutoUpdate(env, payload){
