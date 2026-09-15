@@ -88,7 +88,7 @@ function deepEqual(left, right){
 }
 
 function isInactiveCourtCase(caseData){
-  return ['paused', 'terminated', 'done', 'denied', 'partial'].includes(String(caseData?.dot || ''));
+  return ['paused', 'terminated', 'done', 'done_absentia', 'denied', 'partial'].includes(String(caseData?.dot || ''));
 }
 
 // Защита от старых стартовых карточек, которые когда-то могли остаться рядом
@@ -102,7 +102,7 @@ function courtRecordQuality(caseData){
   const notes = String(caseData?.notes || '').trim();
   if(notes && !/^движение неизвестно\.?$/i.test(notes)) score += 8;
   score += Math.min(Array.isArray(caseData?.hearings) ? caseData.hearings.length : 0, 8) * 4;
-  if(['done', 'denied', 'partial', 'terminated'].includes(caseData?.dot)) score += 14;
+  if(['done', 'done_absentia', 'denied', 'partial', 'terminated'].includes(caseData?.dot)) score += 14;
   if(caseData?.dot === 'paused') score += 5;
   return score;
 }

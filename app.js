@@ -424,7 +424,7 @@ function courtRecordQuality(record){
   const notes = String(record?.notes || '').trim();
   if(notes && !/^движение неизвестно\.?$/i.test(notes)) score += 8;
   score += Math.min(Array.isArray(record?.hearings) ? record.hearings.length : 0, 8) * 4;
-  if(['done', 'denied', 'partial', 'terminated'].includes(record?.dot)) score += 14;
+  if(['done', 'done_absentia', 'denied', 'partial', 'terminated'].includes(record?.dot)) score += 14;
   if(record?.dot === 'paused') score += 5;
   return score;
 }
@@ -628,7 +628,7 @@ function renderGroups(){
         ? {
             icon:DOT[completedCourt.dot],
             label:courtOutcomeLabel(completedCourt),
-            badge:completedCourt.dot === 'done' ? 'done' : (completedCourt.dot === 'denied' ? 'problem' : 'wait')
+            badge:isGrantedCourtCase(completedCourt) ? 'done' : (completedCourt.dot === 'denied' ? 'problem' : 'wait')
           }
         : def;
       const row = document.createElement('div');
@@ -701,23 +701,29 @@ function pluralDela(n){
 /* ---------------------------------------------------------------------------
    РЕНДЕР: СУДЕБНОЕ ПРОИЗВОДСТВО
 --------------------------------------------------------------------------- */
-const DOT = { blue:'🔵', paused:'🟡', terminated:'🔴', done:'✅', denied:'❌', partial:'🟠' };
+const DOT = { blue:'🔵', paused:'🟡', terminated:'🔴', done:'✅', done_absentia:'✅', denied:'❌', partial:'🟠' };
 const COURT_STATUS_LABELS = {
   blue:'В процессе',
   paused:'Приостановлено',
   terminated:'Прекращено производство',
-  done:'Удовлетворено',
+  done:'Удовлетворено — решение',
+  done_absentia:'Удовлетворено — заочное решение',
   denied:'Отказано',
   partial:'Удовлетворено частично'
 };
 const COURT_OUTCOME_LABELS = {
-  done:'Удовлетворено',
+  done:'Удовлетворено — решение',
+  done_absentia:'Удовлетворено — заочное решение',
   denied:'Отказано',
   partial:'Удовлетворено частично'
 };
 
 function isCompletedCourtCase(c){
   return !!COURT_OUTCOME_LABELS[c?.dot];
+}
+
+function isGrantedCourtCase(c){
+  return ['done', 'done_absentia'].includes(c?.dot);
 }
 
 function isPausedCourtCase(c){
@@ -832,7 +838,7 @@ function completedCourtDetailsHtml(c){
     : '<li>Сведения о заседаниях не указаны.</li>';
 
   return `<div class="case-court-details">
-    <div class="case-court-result"><b>${DOT[c.dot]} ${escapeHtml(courtOutcomeLabel(c))}</b> · решение${decisionDate ? ' от '+formatRuDate(decisionDate) : ': дата не указана'}</div>
+    <div class="case-court-result"><b>${DOT[c.dot]} ${escapeHtml(courtOutcomeLabel(c))}</b>${isGrantedCourtCase(c) ? (decisionDate ? ' от '+formatRuDate(decisionDate) : ' · дата решения не указана') : (' · решение'+(decisionDate ? ' от '+formatRuDate(decisionDate) : ': дата не указана'))}</div>
     ${meta ? `<div class="case-court-meta">${meta}</div>` : ''}
     <div class="case-court-section"><b>Проведённые заседания:</b><ul>${hearingItems}</ul></div>
     ${c.notes ? `<div class="case-court-section"><b>Материалы и примечания:</b> ${escapeHtml(c.notes)}</div>` : ''}
@@ -1633,7 +1639,7 @@ function formatAuditValue(field, value){
   if(value === null || value === undefined || value === '') return '—';
   if(field === 'statusKey') return (STATUS_DEFS[value] || {}).label || String(value);
   if(field === 'feeKey') return value === 'paid' ? 'Оплачена' : 'Не оплачена';
-  if(field === 'dot') return ({blue:'В процессе', done:'Удовлетворено', denied:'Отказано', partial:'Удовлетворено частично'})[value] || String(value);
+  if(field === 'dot') return COURT_STATUS_LABELS[value] || String(value);
   if(field === 'protected') return value ? 'Да' : 'Нет';
   if(field === 'filedDate') return formatRuDate(value);
   if(field === 'hearings'){
@@ -2057,7 +2063,8 @@ function openCourtModal(c){
         <option value="blue" ${c.dot==='blue'?'selected':''}>🔵 В процессе</option>
         <option value="paused" ${c.dot==='paused'?'selected':''}>🟡 Приостановлено</option>
         <option value="terminated" ${c.dot==='terminated'?'selected':''}>🔴 Прекращено производство</option>
-        <option value="done" ${c.dot==='done'?'selected':''}>✅ Удовлетворено</option>
+        <option value="done" ${c.dot==='done'?'selected':''}>✅ Удовлетворено — решение</option>
+        <option value="done_absentia" ${c.dot==='done_absentia'?'selected':''}>✅ Удовлетворено — заочное решение</option>
         <option value="denied" ${c.dot==='denied'?'selected':''}>❌ Отказано</option>
         <option value="partial" ${c.dot==='partial'?'selected':''}>🟠 Удовлетворено частично</option>
       </select>
@@ -2353,11 +2360,14 @@ function courtSortNumber(c){
 }
 
 function telegramCourtResult(c){
-  const result = c.dot === 'done'
-    ? 'иск удовлетворён'
-    : (c.dot === 'partial' ? 'иск удовлетворён частично' : 'в удовлетворении иска отказано');
+  const result = c.dot === 'done_absentia'
+    ? 'иск удовлетворён заочным решением'
+    : (c.dot === 'done'
+      ? 'иск удовлетворён'
+      : (c.dot === 'partial' ? 'иск удовлетворён частично' : 'в удовлетворении иска отказано'));
   const decisionDate = courtDecisionDateOf(c);
-  return `${result}${decisionDate ? `, решение от ${formatRuDate(decisionDate)}` : ', дата решения не указана'}`;
+  const dateLead = c.dot === 'done_absentia' ? ' от ' : ', решение от ';
+  return `${result}${decisionDate ? `${dateLead}${formatRuDate(decisionDate)}` : ', дата решения не указана'}`;
 }
 
 function telegramCourtLine(c){
