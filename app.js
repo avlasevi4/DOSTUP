@@ -956,12 +956,13 @@ function renderCourt(){
     const paused = isPausedCourtCase(c);
     const terminated = isTerminatedCourtCase(c);
     const disconnected = isDisconnectedCourtCase(c);
+    const paid = isPaidCourtCase(c);
     const awaitingDate = !isInactiveForHearings(c) ? latestPassedHearingAwaitingUpdateOf(c) : null;
-    card.className = `court-card${completed ? ' court-card-completed' : ''}${paused ? ' court-card-paused' : ''}${terminated ? ' court-card-terminated' : ''}${disconnected ? ' court-card-disconnected' : ''}${awaitingDate ? ' court-card-awaiting-date' : ''}`;
+    card.className = `court-card${completed ? ' court-card-completed' : ''}${paused ? ' court-card-paused' : ''}${terminated ? ' court-card-terminated' : ''}${disconnected ? ' court-card-disconnected' : ''}${paid ? ' court-card-paid' : ''}${awaitingDate ? ' court-card-awaiting-date' : ''}`;
     card.dataset.courtInfoId = c.id;
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-label', `Открыть судебное дело: ${c.name}${disconnected ? ', газ отключён' : ''}`);
+    card.setAttribute('aria-label', `Открыть судебное дело: ${c.name}${disconnected ? ', газ отключён' : (paid ? ', долг оплачен' : '')}`);
     const nh = nearestUpcomingHearingOf(c);
     const decisionDate = completed ? courtDecisionDateOf(c) : '';
     const hearingText = completed
@@ -973,7 +974,7 @@ function renderCourt(){
               : (nh ? formatRuDateTime(nh.date) : (awaitingDate ? `заседание прошло ${formatRuDateTime(awaitingDate.date)}` : 'не назначено'))));
     const preparation = nh && nh.note ? nh.note.trim() : '';
     card.innerHTML = `
-      ${disconnected ? `<span class="court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>` : ''}
+      ${disconnected ? `<span class="court-status-stamp court-disconnected-stamp" aria-hidden="true">ОТКЛЮЧЕН</span>` : (paid ? `<span class="court-status-stamp court-paid-stamp" aria-hidden="true">ОПЛАЧЕНО</span>` : '')}
       <div class="court-dot">${DOT[c.dot]||'🔵'}</div>
       <div class="court-card-main">
         <div class="court-name">${escapeHtml(c.name)}</div>
@@ -2327,6 +2328,10 @@ function linkedRegistryCase(courtCase){
 
 function isDisconnectedCourtCase(courtCase){
   return linkedRegistryCase(courtCase)?.statusKey === 'disconnected';
+}
+
+function isPaidCourtCase(courtCase){
+  return linkedRegistryCase(courtCase)?.statusKey === 'paid';
 }
 
 function hearingsWithinDays(days = 30){
