@@ -2375,6 +2375,8 @@ function telegramCourtResult(c){
   return `${result}${decisionDate ? `${dateLead}${formatRuDate(decisionDate)}` : ', дата решения не указана'}`;
 }
 
+const TELEGRAM_DISCONNECTED_MARKER = '❗ ОТКЛЮЧЕН ❗';
+
 function telegramCourtLine(c){
   const icon = DOT[c.dot] || '🔵';
   const nearest = nearestUpcomingHearingOf(c);
@@ -2388,7 +2390,8 @@ function telegramCourtLine(c){
       ? telegramCourtResult(c)
       : (isPausedCourtCase(c) || isTerminatedCourtCase(c)
           ? lowerFirst(courtOutcomeLabel(c))
-          : (nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено'))
+          : (nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено')),
+    ...(isDisconnectedCourtCase(c) ? [TELEGRAM_DISCONNECTED_MARKER] : [])
   ];
   const prefix = Number.isFinite(registryNumber) && registryNumber !== Number.MAX_SAFE_INTEGER ? `${registryNumber}. ` : '';
   return `${icon} ${prefix}${compactText(c.name) || 'ФИО не указано'} — ${parts.join(', ')}\n   ${telegramEquipmentLine(c)}`;
@@ -2467,11 +2470,23 @@ function closeTelegramSummary(){
   closeBackdrop(telegramBackdrop);
 }
 
+function telegramSummaryClipboardHtml(text){
+  const markerHtml = `<strong>${TELEGRAM_DISCONNECTED_MARKER}</strong>`;
+  return `<div>${escapeHtml(text).replaceAll(TELEGRAM_DISCONNECTED_MARKER, markerHtml).replace(/\n/g, '<br>')}</div>`;
+}
+
 async function copyTelegramSummary(){
   const text = telegramText.value.trim();
   if(!text){ showToast('Сводка пуста.', 'error'); return false; }
   try{
-    await navigator.clipboard.writeText(text);
+    if(navigator.clipboard?.write && typeof ClipboardItem !== 'undefined'){
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/plain':new Blob([text], { type:'text/plain' }),
+        'text/html':new Blob([telegramSummaryClipboardHtml(text)], { type:'text/html' })
+      })]);
+    }else{
+      await navigator.clipboard.writeText(text);
+    }
   }catch(err){
     telegramText.focus();
     telegramText.select();
