@@ -2382,6 +2382,7 @@ function telegramCourtLine(c){
   const nearest = nearestUpcomingHearingOf(c);
   const completed = isCompletedCourtCase(c);
   const registryNumber = courtSortNumber(c);
+  const terminationNote = isTerminatedCourtCase(c) ? compactText(c.notes) : '';
   const parts = [
     compactText(c.court) || 'суд не указан',
     compactText(c.caseNumber) ? `дело №${compactText(c.caseNumber)}` : 'номер дела не указан',
@@ -2391,6 +2392,7 @@ function telegramCourtLine(c){
       : (isPausedCourtCase(c) || isTerminatedCourtCase(c)
           ? lowerFirst(courtOutcomeLabel(c))
           : (nearest ? `ближайшее заседание ${formatRuDateTime(nearest.date)}` : 'ближайшее заседание не назначено')),
+    ...(terminationNote ? [`примечание: ${terminationNote}`] : []),
     ...(isDisconnectedCourtCase(c) ? [TELEGRAM_DISCONNECTED_MARKER] : [])
   ];
   const prefix = Number.isFinite(registryNumber) && registryNumber !== Number.MAX_SAFE_INTEGER ? `${registryNumber}. ` : '';
@@ -2423,18 +2425,24 @@ function telegramClosedCaseLine(c){
 
 function buildTelegramSummary(){
   const lines = [`📊 Работа по искам об обеспечении доступа на ${formatRuDate(todayLocalIso())}`, ''];
+  const resolvedCourtCases = COURT.filter(isClosedCourtCase).sort(compareCourtCases);
+  const activeCourtCases = COURT.filter(c => !isClosedCourtCase(c)).sort(compareCourtCases);
   const deadlines = hearingsWithinDays(30);
+
+  lines.push(`⚖️ ПРОСУЖЕННЫЕ ДЕЛА (${resolvedCourtCases.length} ${pluralDela(resolvedCourtCases.length)})`);
+  if(resolvedCourtCases.length) resolvedCourtCases.forEach(c => lines.push(telegramCourtLine(c)));
+  else lines.push('Решения и прекращённые производства пока не указаны.');
+
+  lines.push('', '━━━━━━━━━━━━━━━━━━━━');
   lines.push('⏰ БЛИЖАЙШИЕ СУДЕБНЫЕ ЗАСЕДАНИЯ');
   if(deadlines.length) deadlines.forEach(item => lines.push(telegramDeadlineLine(item)));
   else lines.push('Назначенных заседаний на ближайшие 30 дней нет.');
 
-  lines.push('', '━━━━━━━━━━━━━━━━━━━━', `⚖️ СУДЕБНОЕ ПРОИЗВОДСТВО (${COURT.length} ${pluralDela(COURT.length)})`);
-  if(COURT.length){
-    COURT.slice()
-      .sort(compareCourtCases)
-      .forEach(c => lines.push(telegramCourtLine(c)));
+  lines.push('', '━━━━━━━━━━━━━━━━━━━━', `⚖️ СУДЕБНОЕ ПРОИЗВОДСТВО (${activeCourtCases.length} ${pluralDela(activeCourtCases.length)})`);
+  if(activeCourtCases.length){
+    activeCourtCases.forEach(c => lines.push(telegramCourtLine(c)));
   } else {
-    lines.push('Дел в судебном производстве пока нет.');
+    lines.push('Активных дел в судебном производстве нет.');
   }
 
   const closedCases = CASES
