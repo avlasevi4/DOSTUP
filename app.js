@@ -1236,6 +1236,7 @@ function courtUpdateHearingDiff(c, fetched={}){
   const pastHearings = beforeHearings.filter(h => h.date.slice(0, 10) < cutoff);
   const currentHearings = beforeHearings.filter(h => h.date.slice(0, 10) >= cutoff);
   const sourceHearings = normalizedHearings(fetched.hearings);
+  const beforeByDate = new Map(beforeHearings.map(h => [h.date, h]));
   const byDate = new Map(currentHearings.map(h => [h.date, h]));
   const canTransferNotes = sourceHearings.length === currentHearings.length;
 
@@ -1246,14 +1247,24 @@ function courtUpdateHearingDiff(c, fetched={}){
     const transferredNote = canTransferNotes ? currentHearings[index]?.note : '';
     return { date:h.date, note:exact?.note || transferredNote || '' };
   });
-  const afterHearings = normalizedHearings([...pastHearings, ...afterCurrentHearings]);
-  const sourceDates = new Set(sourceHearings.map(h => h.date));
-  const currentDates = new Set(currentHearings.map(h => h.date));
-  const added = afterCurrentHearings.filter(h => !currentDates.has(h.date));
-  const removed = currentHearings.filter(h => !sourceDates.has(h.date));
-  const hearingsChanged = !deepEqual(beforeHearings, afterHearings);
+  const outcome = fetched.outcome && ['done', 'done_absentia', 'denied', 'partial', 'terminated'].includes(fetched.outcome.dot)
+    ? fetched.outcome
+    : null;
+  const decisionHearing = normalizedHearings(outcome?.decisionDate ? [{
+    date:outcome.decisionDate,
+    note:beforeByDate.get(outcome.decisionDate)?.note || ''
+  }] : [])[0] || null;
+  const afterHearings = normalizedHearings([
+    ...pastHearings,
+    ...afterCurrentHearings,
+    ...(decisionHearing ? [decisionHearing] : [])
+  ]);
+  const beforeDates = new Set(beforeHearings.map(h => h.date));
+  const afterDates = new Set(afterHearings.map(h => h.date));
+  const removed = beforeHearings.filter(h => !afterDates.has(h.date));
   const patch = {};
-  if(hearingsChanged) patch.hearings = afterHearings;
+  if(!deepEqual(beforeHearings, afterHearings)) patch.hearings = afterHearings;
+  if(outcome && String(c.dot || 'blue') !== outcome.dot) patch.dot = outcome.dot;
 
   return {
     id:c.id,
@@ -1262,9 +1273,12 @@ function courtUpdateHearingDiff(c, fetched={}){
     kind:'hearings',
     beforeHearings,
     afterHearings,
+    beforeDot:String(c.dot || 'blue'),
+    afterDot:outcome?.dot || String(c.dot || 'blue'),
+    outcome,
     beforeCaseNumber:String(c.caseNumber || '').trim(),
     beforeJudge:String(c.judge || '').trim(),
-    added,
+    added:afterHearings.filter(h => !beforeDates.has(h.date)),
     removed,
     patch,
     changed:Object.keys(patch).length > 0
@@ -1314,17 +1328,20 @@ function renderCourtUpdatePreview({ diffs=[], errors=[], withoutLinks=0, checked
       const judge = diff.patch.judge
         ? `<div class="court-update-change court-update-fill"><b>Заполнить судью:</b> ${escapeHtml(diff.patch.judge)}</div>`
         : '';
+      const outcome = diff.patch.dot
+        ? `<div class="court-update-change court-update-fill"><b>Изменить результат дела:</b> ${escapeHtml(COURT_STATUS_LABELS[diff.beforeDot] || diff.beforeDot || 'В процессе')} → ${escapeHtml(COURT_STATUS_LABELS[diff.patch.dot] || diff.patch.dot)}${diff.outcome?.decisionDate ? `, от ${escapeHtml(formatRuDate(diff.outcome.decisionDate.slice(0, 10)))}` : ''}${diff.outcome?.basis ? `<br><span>Основание на сайте суда: ${escapeHtml(diff.outcome.basis)}</span>` : ''}</div>`
+        : '';
       return `<article class="court-update-case">
         <label class="court-update-case-head">
           <input type="checkbox" data-court-update-select="${escapeAttr(diff.key)}" checked>
           <span><b>${escapeHtml(diff.name)}</b></span>
         </label>
         ${diff.court ? `<p>${escapeHtml(diff.court)}</p>` : ''}
-        ${additions}${removals}${caseNumber}${judge}
+        ${additions}${removals}${outcome}${caseNumber}${judge}
       </article>`;
     }).join(''));
   }else if(checked){
-    lines.push('<p class="court-update-empty">Новых дат или переносов не обнаружено.</p>');
+    lines.push(`<p class="court-update-empty">${courtUpdateMode === 'details' ? 'Изменений в сведениях карточек не обнаружено.' : 'Изменений в движении дел не обнаружено.'}</p>`);
   }
 
   if(errors.length){
@@ -1496,9 +1513,9 @@ async function requestCourtUpdates(mode){
   courtUpdateCancelButton.textContent = 'Отмена';
   const isHearingsMode = mode === 'hearings';
   const triggerButton = isHearingsMode ? courtHearingUpdateButton : courtDetailsUpdateButton;
-  courtUpdateTitle.textContent = isHearingsMode ? 'Обновление дат заседаний' : 'Обновление карточек дел';
+  courtUpdateTitle.textContent = isHearingsMode ? 'Обновление хода дел' : 'Обновление карточек дел';
   courtUpdateSubtitle.textContent = isHearingsMode
-    ? 'Даты сверяются со страницами дел на сайтах судов. Изменения попадут в карточки только после подтверждения.'
+    ? 'Даты заседаний и результаты рассмотрения сверяются со страницами дел на сайтах судов. Изменения попадут в карточки только после подтверждения.'
     : 'Номер дела будет предложен, если он пустой или не совпадает; судья — только если это поле пустое.';
 
   const isEligibleForUpdate = c => isHearingsMode ? !isInactiveForHearings(c) : !isClosedCourtCase(c);
@@ -1516,7 +1533,7 @@ async function requestCourtUpdates(mode){
   courtUpdateApplyButton.hidden = true;
   courtUpdatePreview.innerHTML = '';
   startCourtUpdateProgress(
-    isHearingsMode ? 'Проверяем даты заседаний' : 'Проверяем сведения карточек',
+    isHearingsMode ? 'Проверяем ход дел' : 'Проверяем сведения карточек',
     casesToCheck.length
   );
   triggerButton.disabled = true;
@@ -1584,7 +1601,8 @@ courtUpdateApplyButton.addEventListener('click', async event => {
     const current = COURT.find(c => c.id === diff.id);
     if(!current) return true;
     if(diff.kind === 'hearings'){
-      return !deepEqual(normalizedHearings(hearingsOf(current)), diff.beforeHearings);
+      return !deepEqual(normalizedHearings(hearingsOf(current)), diff.beforeHearings)
+        || (diff.patch.dot !== undefined && String(current.dot || 'blue') !== String(diff.beforeDot || 'blue'));
     }
     return (diff.patch.caseNumber !== undefined && String(current.caseNumber || '').trim() !== diff.beforeCaseNumber)
       || (diff.patch.judge !== undefined && String(current.judge || '').trim() !== diff.beforeJudge);
@@ -1671,7 +1689,7 @@ function logActionLabel(action){
   return ({
     'case.update':'Изменение дела', 'case.create':'Добавление должника', 'case.delete':'Удаление должника',
     'court.update':'Изменение судопроизводства', 'court.create':'Добавление в судопроизводство', 'court.delete':'Удаление из судопроизводства',
-    'court.hearing_sync':'Обновление дат заседаний', 'court.details_sync':'Обновление карточек дел', 'court.auto_sync':'Применение автопроверки судов',
+    'court.hearing_sync':'Обновление хода дела', 'court.details_sync':'Обновление карточек дел', 'court.auto_sync':'Применение автопроверки судов',
     'import':'Массовый импорт', 'backup.restore':'Восстановление копии', 'undo':'Отмена операции',
     'system.migration':'Системная сверка данных', 'system.deduplication':'Очистка дубликатов', 'note':'Заметка'
   })[action] || 'Изменение';

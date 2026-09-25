@@ -53,17 +53,24 @@ function moscowToday(){
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function toIsoDateTime(dateText, timeText){
+function toIsoDate(dateText){
   const date = String(dateText || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  const time = String(timeText || '').match(/^(\d{1,2}):(\d{2})$/);
-  if(!date || !time) return '';
+  if(!date) return '';
   const day = Number(date[1]);
   const month = Number(date[2]);
   const year = Number(date[3]);
+  if(month < 1 || month > 12 || day < 1 || day > 31) return '';
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function toIsoDateTime(dateText, timeText){
+  const date = toIsoDate(dateText);
+  const time = String(timeText || '').match(/^(\d{1,2}):(\d{2})$/);
+  if(!date || !time) return '';
   const hour = Number(time[1]);
   const minute = Number(time[2]);
-  if(month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return '';
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  if(hour > 23 || minute > 59) return '';
+  return `${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
 function mainCaseNumber(value){
@@ -131,6 +138,7 @@ function hearingDiff(caseData, fetched={}){
   const pastHearings = beforeHearings.filter(hearing => hearing.date.slice(0, 10) < today);
   const currentHearings = beforeHearings.filter(hearing => hearing.date.slice(0, 10) >= today);
   const sourceHearings = normalizedHearings(fetched.hearings);
+  const beforeByDate = new Map(beforeHearings.map(hearing => [hearing.date, hearing]));
   const currentByDate = new Map(currentHearings.map(hearing => [hearing.date, hearing]));
   const canTransferNotes = sourceHearings.length === currentHearings.length;
   const afterCurrentHearings = sourceHearings.map((hearing, index) => {
@@ -138,17 +146,33 @@ function hearingDiff(caseData, fetched={}){
     const transferredNote = canTransferNotes ? currentHearings[index]?.note : '';
     return { date:hearing.date, note:exact?.note || transferredNote || '' };
   });
-  const afterHearings = normalizedHearings([...pastHearings, ...afterCurrentHearings]);
-  const sourceDates = new Set(sourceHearings.map(hearing => hearing.date));
-  const currentDates = new Set(currentHearings.map(hearing => hearing.date));
-  const patch = deepEqual(beforeHearings, afterHearings) ? {} : { hearings:afterHearings };
+  const outcome = fetched.outcome && ['done', 'done_absentia', 'denied', 'partial', 'terminated'].includes(fetched.outcome.dot)
+    ? fetched.outcome
+    : null;
+  const decisionHearing = normalizedHearings(outcome?.decisionDate ? [{
+    date:outcome.decisionDate,
+    note:beforeByDate.get(outcome.decisionDate)?.note || ''
+  }] : [])[0] || null;
+  const afterHearings = normalizedHearings([
+    ...pastHearings,
+    ...afterCurrentHearings,
+    ...(decisionHearing ? [decisionHearing] : [])
+  ]);
+  const beforeDates = new Set(beforeHearings.map(hearing => hearing.date));
+  const afterDates = new Set(afterHearings.map(hearing => hearing.date));
+  const patch = {};
+  if(!deepEqual(beforeHearings, afterHearings)) patch.hearings = afterHearings;
+  if(outcome && String(caseData.dot || 'blue') !== outcome.dot) patch.dot = outcome.dot;
   return {
     id:caseData.id, name:caseData.name || '', court:caseData.court || '', kind:'hearings',
     beforeHearings, afterHearings,
+    beforeDot:String(caseData.dot || 'blue'),
+    afterDot:outcome?.dot || String(caseData.dot || 'blue'),
+    outcome,
     beforeCaseNumber:String(caseData.caseNumber || '').trim(),
     beforeJudge:String(caseData.judge || '').trim(),
-    added:afterCurrentHearings.filter(hearing => !currentDates.has(hearing.date)),
-    removed:currentHearings.filter(hearing => !sourceDates.has(hearing.date)),
+    added:afterHearings.filter(hearing => !beforeDates.has(hearing.date)),
+    removed:beforeHearings.filter(hearing => !afterDates.has(hearing.date)),
     patch, changed:Object.keys(patch).length > 0
   };
 }
@@ -243,16 +267,22 @@ async function clearAutoUpdate(env){
   await firestoreRequest(env, AUTO_UPDATE_DOCUMENT, { method:'DELETE' });
 }
 
-export function extractUpcomingHearings(html){
+function extractMovementRows(html){
   const movement = String(html || '').match(/<div\b[^>]*\bid\s*=\s*['"]cont2['"][^>]*>[\s\S]*?<table\b[^>]*>([\s\S]*?)<\/table>/i)?.[1];
   if(!movement) throw new Error('На странице не найдена таблица «Движение дела».');
+
+  return [...movement.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map(row => [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell => htmlText(cell[1])))
+    .filter(cells => cells.length);
+}
+
+export function extractUpcomingHearings(html){
+  const rows = extractMovementRows(html);
 
   const today = moscowToday();
   const seen = new Set();
   const hearings = [];
-  const rows = movement.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi);
-  for(const row of rows){
-    const cells = [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell => htmlText(cell[1]));
+  for(const cells of rows){
     if(cells.length < 3 || !/^(?:предварительное\s+)?судебное\s+заседание\s*$/i.test(cells[0])) continue;
     // В заполненной графе «Результат события» уже состоявшееся заседание.
     if(String(cells[4] || '').trim()) continue;
@@ -262,6 +292,31 @@ export function extractUpcomingHearings(html){
     hearings.push({ date, place:String(cells[3] || '').trim() });
   }
   return hearings.sort((a,b) => a.date.localeCompare(b.date));
+}
+
+export function extractCourtOutcome(html){
+  const outcomes = [];
+  for(const cells of extractMovementRows(html)){
+    if(cells.length < 6 || !/^(?:предварительное\s+)?судебное\s+заседание\s*$/i.test(cells[0])) continue;
+    const result = String(cells[4] || '').trim();
+    const basis = String(cells[5] || '').trim();
+    const combined = `${result} ${basis}`.replace(/\s+/g, ' ').trim();
+    const isDecision = /вынесено\s+(?:заочное\s+)?решение\s+по\s+делу/i.test(result);
+    const isTerminated = /производств\S*\s+по\s+делу\s+прекращ/i.test(combined);
+    if(!isDecision && !isTerminated) continue;
+
+    let dot = '';
+    if(isTerminated) dot = 'terminated';
+    else if(/удовлетвор\S*\s+частич/i.test(combined) || /частич\S*\s+удовлетвор/i.test(combined)) dot = 'partial';
+    else if(/отказ/i.test(combined)) dot = 'denied';
+    else if(/удовлетвор/i.test(combined)) dot = /заочн/i.test(combined) ? 'done_absentia' : 'done';
+    if(!dot) continue;
+
+    const decisionDate = toIsoDateTime(cells[1], cells[2]) || toIsoDate(cells[1]);
+    if(!decisionDate) continue;
+    outcomes.push({ dot, decisionDate, result, basis });
+  }
+  return outcomes.sort((left, right) => right.decisionDate.localeCompare(left.decisionDate))[0] || null;
 }
 
 export function extractCaseMetadata(html){
@@ -331,8 +386,9 @@ async function checkCase(input){
     if(!response.ok) return { id, status:'error', message:`страница суда вернула HTTP ${response.status}` };
     const html = await readCourtHtml(response);
     const hearings = extractUpcomingHearings(html);
+    const outcome = extractCourtOutcome(html);
     const { caseNumber, judge } = extractCaseMetadata(html);
-    return { id, name, status:'ok', hearings, caseNumber, judge, checkedAt:new Date().toISOString() };
+    return { id, name, status:'ok', hearings, outcome, caseNumber, judge, checkedAt:new Date().toISOString() };
   }catch(error){
     const timeout = error?.name === 'AbortError';
     return { id, status:'error', message:timeout ? 'страница суда не ответила за 25 секунд' : 'не удалось загрузить страницу суда' };
@@ -373,7 +429,7 @@ async function runScheduledCourtCheck(env){
   if(changes.length){
     const checkedAt = new Date().toISOString();
     await writeAutoUpdate(env, {
-      status:'pending', version:1,
+      status:'pending', version:2,
       runId:`scheduled-${checkedAt}-${crypto.randomUUID()}`,
       checkedAt, checkedCount:results.length, withoutLinks,
       changes, errors
